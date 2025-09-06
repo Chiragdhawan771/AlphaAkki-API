@@ -6,80 +6,63 @@ export type EnrollmentDocument = Enrollment & Document;
 export enum EnrollmentStatus {
   ACTIVE = 'active',
   COMPLETED = 'completed',
-  SUSPENDED = 'suspended',
-  CANCELLED = 'cancelled',
+  CANCELLED = 'cancelled'
 }
 
 export enum PaymentStatus {
   PENDING = 'pending',
   COMPLETED = 'completed',
   FAILED = 'failed',
-  REFUNDED = 'refunded',
+  REFUNDED = 'refunded'
 }
 
 @Schema({ timestamps: true })
 export class Enrollment {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  student: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Course', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'SimplifiedCourse', required: true })
   course: Types.ObjectId;
-
-  @Prop({ enum: EnrollmentStatus, default: EnrollmentStatus.ACTIVE })
-  status: EnrollmentStatus;
 
   @Prop({ default: Date.now })
   enrolledAt: Date;
 
-  @Prop()
-  completedAt: Date;
+  @Prop({ enum: Object.values(EnrollmentStatus), default: EnrollmentStatus.ACTIVE })
+  status: EnrollmentStatus;
 
-  // Payment information
-  @Prop({ default: 0 })
-  amountPaid: number;
+  @Prop({ default: 0, min: 0, max: 100 })
+  progress: number;
 
-  @Prop({ enum: PaymentStatus, default: PaymentStatus.COMPLETED })
-  paymentStatus: PaymentStatus;
-
-  @Prop()
-  paymentId: string; // Payment gateway transaction ID
-
-  @Prop()
-  paymentMethod: string;
-
-  // Progress tracking
   @Prop({ default: 0 })
   progressPercentage: number;
 
-  @Prop({ type: [Types.ObjectId], ref: 'Lecture', default: [] })
-  completedLectures: Types.ObjectId[];
+  @Prop({ default: 0 })
+  totalTimeSpent: number;
 
   @Prop()
-  lastAccessedLecture: Types.ObjectId;
+  completedAt: Date;
+
+  @Prop({ default: 0 })
+  amountPaid: number;
+
+  @Prop()
+  paymentId: string;
+
+  @Prop({ default: [] })
+  watchedVideos: string[]; // Array of video IDs that user has watched
 
   @Prop()
   lastAccessedAt: Date;
-
-  @Prop({ default: 0 }) // Total time spent in minutes
-  totalTimeSpent: number;
-
-  // Certificate
-  @Prop()
-  certificateUrl: string;
-
-  @Prop()
-  certificateIssuedAt: Date;
-
-  // Timestamps
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 export const EnrollmentSchema = SchemaFactory.createForClass(Enrollment);
 
 // Indexes for better performance
-EnrollmentSchema.index({ user: 1, course: 1 }, { unique: true });
-EnrollmentSchema.index({ user: 1 });
+EnrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
+EnrollmentSchema.index({ student: 1 });
 EnrollmentSchema.index({ course: 1 });
 EnrollmentSchema.index({ status: 1 });
 EnrollmentSchema.index({ enrolledAt: -1 });

@@ -62,7 +62,6 @@ export class S3Service {
         Key: key,
         Body: file.buffer,
         ContentType: file.mimetype,
-        ACL: 'public-read', // Make files publicly accessible
       });
 
       await this.s3Client.send(command);
