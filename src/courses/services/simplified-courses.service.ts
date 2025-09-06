@@ -4,12 +4,14 @@ import { Model, Types } from 'mongoose';
 import { SimplifiedCourse, SimplifiedCourseDocument } from '../schemas/simplified-course.schema';
 import { Enrollment, EnrollmentDocument, EnrollmentStatus } from '../schemas/enrollment.schema';
 import { CreateSimplifiedCourseDto, UpdateSimplifiedCourseDto, AddVideoDto, EnrollCourseDto } from '../dto/simplified-course.dto';
+import { S3Service } from '../../common/services/s3.service';
 
 @Injectable()
 export class SimplifiedCoursesService {
   constructor(
     @InjectModel(SimplifiedCourse.name) private courseModel: Model<SimplifiedCourseDocument>,
     @InjectModel(Enrollment.name) private enrollmentModel: Model<EnrollmentDocument>,
+    private readonly s3Service: S3Service,
   ) {}
 
   // Admin: Create a new course
@@ -270,5 +272,60 @@ export class SimplifiedCoursesService {
     }
 
     return enrollment;
+  }
+
+  // User/Admin: Get secure video URL
+  async getSecureVideoUrl(courseId: string, videoIndex: number, userId: string, userRole: string) {
+    const course = await this.courseModel.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    if (videoIndex < 0 || videoIndex >= course.videos.length) {
+      throw new BadRequestException('Invalid video index');
+    }
+
+    // Check access permissions
+    if (userRole === 'admin' || course.instructor.toString() === userId) {
+      // Admin or course instructor can access any video
+    } else {
+      // Regular users must be enrolled
+      const enrollment = await this.enrollmentModel.findOne({
+        student: userId,
+        course: courseId,
+        status: 'active'
+      });
+
+      if (!enrollment) {
+        throw new ForbiddenException('You must be enrolled to access course videos');
+      }
+    }
+
+    const video = course.videos[videoIndex];
+    
+    try {
+      // Generate signed URL for secure access (expires in 1 hour)
+      const signedUrl = await this.s3Service.getSignedUrl(video.videoKey, 3600);
+      
+      return {
+        streamUrl: signedUrl,
+        video: {
+          title: video.title,
+          duration: video.duration,
+          order: video.order
+        }
+      };
+    } catch (error) {
+      console.error('Failed to generate signed URL:', error);
+      // Fallback to original URL if signed URL generation fails
+      return {
+        streamUrl: video.videoUrl,
+        video: {
+          title: video.title,
+          duration: video.duration,
+          order: video.order
+        }
+      };
+    }
   }
 }

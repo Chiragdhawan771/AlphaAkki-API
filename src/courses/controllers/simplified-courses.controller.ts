@@ -103,6 +103,18 @@ export class SimplifiedCoursesController {
     return this.coursesService.markVideoAsWatched(id, +videoIndex, req.user._id);
   }
 
+  // User/Admin: Get secure video stream URL
+  @Get(':id/videos/:videoIndex/stream')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get secure video stream URL' })
+  async getVideoStream(
+    @Param('id') id: string,
+    @Param('videoIndex') videoIndex: number,
+    @Request() req,
+  ) {
+    return this.coursesService.getSecureVideoUrl(id, +videoIndex, req.user._id, req.user.role);
+  }
+
   // Admin: Add video to course
   @Post(':id/videos')
   @UseGuards(JwtAuthGuard)
