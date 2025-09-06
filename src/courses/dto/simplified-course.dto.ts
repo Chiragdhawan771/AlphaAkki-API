@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsEnum, IsArray, ValidateNested } from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsEnum, IsArray, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -26,6 +26,46 @@ export class CreateSimplifiedCourseDto {
   @IsString()
   @IsOptional()
   thumbnail?: string;
+
+  @ApiProperty({ description: 'Course preview video URL', required: false })
+  @IsString()
+  @IsOptional()
+  previewVideo?: string;
+
+  @ApiProperty({ description: 'Short description for course preview', required: false })
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  shortDescription?: string;
+
+  @ApiProperty({ description: 'Learning outcomes', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  learningOutcomes?: string[];
+
+  @ApiProperty({ description: 'Prerequisites', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  prerequisites?: string[];
+
+  @ApiProperty({ description: 'Estimated duration in hours', required: false })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  estimatedDuration?: number;
+
+  @ApiProperty({ description: 'Course category', required: false })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiProperty({ description: 'Course tags', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class AddVideoDto {
@@ -71,6 +111,46 @@ export class UpdateSimplifiedCourseDto {
   @IsString()
   @IsOptional()
   thumbnail?: string;
+
+  @ApiProperty({ description: 'Course preview video URL', required: false })
+  @IsString()
+  @IsOptional()
+  previewVideo?: string;
+
+  @ApiProperty({ description: 'Short description for course preview', required: false })
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  shortDescription?: string;
+
+  @ApiProperty({ description: 'Learning outcomes', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  learningOutcomes?: string[];
+
+  @ApiProperty({ description: 'Prerequisites', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  prerequisites?: string[];
+
+  @ApiProperty({ description: 'Estimated duration in hours', required: false })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  estimatedDuration?: number;
+
+  @ApiProperty({ description: 'Course category', required: false })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiProperty({ description: 'Course tags', type: [String], required: false })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class EnrollCourseDto {

@@ -29,6 +29,33 @@ export class SimplifiedCourse {
   @Prop()
   thumbnail: string;
 
+  @Prop()
+  previewVideo: string;
+
+  @Prop({ trim: true })
+  shortDescription: string;
+
+  @Prop({ type: [String], default: [] })
+  learningOutcomes: string[];
+
+  @Prop({ type: [String], default: [] })
+  prerequisites: string[];
+
+  @Prop({ min: 0 })
+  estimatedDuration: number; // in hours
+
+  @Prop({ trim: true })
+  category: string;
+
+  @Prop({ type: [String], default: [] })
+  tags: string[];
+
+  @Prop({ default: 0, min: 0, max: 5 })
+  averageRating: number;
+
+  @Prop({ default: 0, min: 0 })
+  totalReviews: number;
+
   @Prop({ default: [] })
   videos: {
     title: string;
