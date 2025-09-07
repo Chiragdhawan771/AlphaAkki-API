@@ -32,20 +32,22 @@ export class EnrollmentsController {
   }
 
   @Get('my-courses')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get current user enrollments' })
   @ApiResponse({ status: 200, description: 'User enrollments retrieved successfully' })
   async getMyEnrollments(
     @Request() req,
     @Query('status') status?: EnrollmentStatus,
   ) {
-    return this.enrollmentsService.getUserEnrollments(req.user.userId, status);
+    return this.enrollmentsService.getUserEnrollments(req.user._id, status);
   }
 
   @Get('dashboard')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get user learning dashboard' })
   @ApiResponse({ status: 200, description: 'Dashboard data retrieved successfully' })
   async getDashboard(@Request() req) {
-    return this.enrollmentsService.getUserDashboard(req.user.userId);
+    return this.enrollmentsService.getUserDashboard(req.user._id);
   }
 
   @Get('course/:courseId')
