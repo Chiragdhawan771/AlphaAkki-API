@@ -47,7 +47,12 @@ export class EnrollmentsController {
   @ApiOperation({ summary: 'Get user learning dashboard' })
   @ApiResponse({ status: 200, description: 'Dashboard data retrieved successfully' })
   async getDashboard(@Request() req) {
-    return this.enrollmentsService.getUserDashboard(req.user._id);
+    const dashboardData = await this.enrollmentsService.getUserDashboard(req.user._id);
+    return {
+      success: true,
+      data: dashboardData,
+      message: 'Dashboard data retrieved successfully'
+    };
   }
 
   @Get('course/:courseId')

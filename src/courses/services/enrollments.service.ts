@@ -260,7 +260,7 @@ export class EnrollmentsService {
   async getUserDashboard(userId: string): Promise<any> {
     const enrollments = await this.enrollmentModel
       .find({ user: userId, status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] } })
-      .populate('course', 'title thumbnail instructor level duration')
+      .populate('course', 'title thumbnail instructor level duration price type')
       .populate('course.instructor', 'firstName lastName')
       .sort({ lastAccessedAt: -1 })
       .exec();
@@ -268,17 +268,31 @@ export class EnrollmentsService {
     const inProgress = enrollments.filter(e => e.status === EnrollmentStatus.ACTIVE);
     const completed = enrollments.filter(e => e.status === EnrollmentStatus.COMPLETED);
 
-    const totalTimeSpent = enrollments.reduce((sum, e) => sum + e.totalTimeSpent, 0);
+    const totalTimeSpent = enrollments.reduce((sum, e) => sum + (e.totalTimeSpent || 0), 0);
     const avgProgress = enrollments.length > 0 
-      ? enrollments.reduce((sum, e) => sum + e.progressPercentage, 0) / enrollments.length 
+      ? enrollments.reduce((sum, e) => sum + (e.progressPercentage || e.progress || 0), 0) / enrollments.length 
       : 0;
+
+    // Calculate certificates (completed courses)
+    const certificates = completed.length;
 
     return {
       totalCourses: enrollments.length,
       inProgress: inProgress.length,
       completed: completed.length,
-      totalTimeSpent,
-      avgProgress,
+      certificates,
+      totalTimeSpent: Math.round(totalTimeSpent / 60), // Convert to minutes
+      avgProgress: Math.round(avgProgress),
+      enrollments: enrollments.map(enrollment => ({
+        id: enrollment._id,
+        course: enrollment.course,
+        status: enrollment.status,
+        enrolledAt: enrollment.enrolledAt,
+        completedAt: enrollment.completedAt,
+        progressPercentage: enrollment.progressPercentage || enrollment.progress || 0,
+        totalTimeSpent: enrollment.totalTimeSpent || 0,
+        lastAccessedAt: enrollment.lastAccessedAt || enrollment.enrolledAt
+      })),
       recentCourses: enrollments.slice(0, 5),
     };
   }
