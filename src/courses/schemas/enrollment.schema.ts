@@ -19,9 +19,6 @@ export enum PaymentStatus {
 @Schema({ timestamps: true })
 export class Enrollment {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  student: Types.ObjectId;
-
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'SimplifiedCourse', required: true })
@@ -60,9 +57,9 @@ export class Enrollment {
 
 export const EnrollmentSchema = SchemaFactory.createForClass(Enrollment);
 
-// Indexes for better performance
-EnrollmentSchema.index({ student: 1, course: 1 }, { unique: true });
-EnrollmentSchema.index({ student: 1 });
+//# Indexes for better performance
+EnrollmentSchema.index({ user: 1, course: 1 }, { unique: true });
+EnrollmentSchema.index({ user: 1 });
 EnrollmentSchema.index({ course: 1 });
 EnrollmentSchema.index({ status: 1 });
 EnrollmentSchema.index({ enrolledAt: -1 });

@@ -39,7 +39,7 @@ export class SimplifiedCoursesService {
     // If user is not admin/instructor, check if they're enrolled
     if (userRole !== 'admin' && course.instructor.toString() !== userId) {
       const enrollment = await this.enrollmentModel.findOne({
-        student: userId,
+        user: userId,
         course: id,
         status: 'active'
       });
@@ -174,7 +174,7 @@ export class SimplifiedCoursesService {
 
     // Check if already enrolled
     const existingEnrollment = await this.enrollmentModel.findOne({
-      student: userId,
+      user: userId,
       course: courseId
     });
 
@@ -182,10 +182,21 @@ export class SimplifiedCoursesService {
       throw new BadRequestException('Already enrolled in this course');
     }
 
+    // For paid courses, require payment validation
+    if (course.type === 'paid') {
+      if (!enrollDto.paymentId) {
+        throw new BadRequestException('Payment is required for paid courses. Please complete payment first.');
+      }
+      
+      if (!enrollDto.amountPaid || enrollDto.amountPaid < course.price) {
+        throw new BadRequestException('Invalid payment amount');
+      }
+    }
+
     const enrollment = new this.enrollmentModel({
-      student: userId,
+      user: userId,
       course: courseId,
-      amountPaid: enrollDto.amountPaid || course.price,
+      amountPaid: enrollDto.amountPaid || (course.type === 'free' ? 0 : course.price),
       paymentId: enrollDto.paymentId,
       status: 'active'
     });
@@ -203,7 +214,7 @@ export class SimplifiedCoursesService {
   // User: Get enrolled courses
   async getEnrolledCourses(userId: string) {
     return this.enrollmentModel
-      .find({ student: userId, status: 'active' })
+      .find({ user: userId, status: 'active' })
       .populate({
         path: 'course',
         populate: {
@@ -217,7 +228,7 @@ export class SimplifiedCoursesService {
   // User: Get course with videos (only if enrolled)
   async getCourseWithVideos(courseId: string, userId: string) {
     const enrollment = await this.enrollmentModel.findOne({
-      student: userId,
+      user: userId,
       course: courseId,
       status: 'active'
     });
@@ -240,7 +251,7 @@ export class SimplifiedCoursesService {
   // User: Mark video as watched
   async markVideoAsWatched(courseId: string, videoIndex: number, userId: string) {
     const enrollment = await this.enrollmentModel.findOne({
-      student: userId,
+      user: userId,
       course: courseId,
       status: 'active'
     });
@@ -291,7 +302,7 @@ export class SimplifiedCoursesService {
     } else {
       // Regular users must be enrolled
       const enrollment = await this.enrollmentModel.findOne({
-        student: userId,
+        user: userId,
         course: courseId,
         status: 'active'
       });

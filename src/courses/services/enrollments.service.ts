@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Enrollment, EnrollmentDocument, EnrollmentStatus } from '../schemas/enrollment.schema';
-import { Course, CourseDocument } from '../schemas/course.schema';
+import { SimplifiedCourse, SimplifiedCourseDocument } from '../schemas/simplified-course.schema';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import { CreateEnrollmentDto } from '../dto';
 
@@ -10,7 +10,7 @@ import { CreateEnrollmentDto } from '../dto';
 export class EnrollmentsService {
   constructor(
     @InjectModel(Enrollment.name) private enrollmentModel: Model<EnrollmentDocument>,
-    @InjectModel(Course.name) private courseModel: Model<CourseDocument>,
+    @InjectModel(SimplifiedCourse.name) private courseModel: Model<SimplifiedCourseDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
 
@@ -92,38 +92,89 @@ export class EnrollmentsService {
       .exec() as Promise<Enrollment | null>;
   }
 
-  async updateEnrollmentStatus(enrollmentId: string, status: EnrollmentStatus, userId: string, userRole: string): Promise<Enrollment> {
-    if (!Types.ObjectId.isValid(enrollmentId)) {
-      throw new BadRequestException('Invalid enrollment ID');
+  async updateEnrollmentStatus(enrollmentId: string, status: EnrollmentStatus, userId: string, userRole: string): Promise<Enrollment>;
+  async updateEnrollmentStatus(userId: string, courseId: string, status: EnrollmentStatus): Promise<Enrollment>;
+  async updateEnrollmentStatus(
+    enrollmentIdOrUserId: string, 
+    statusOrCourseId: EnrollmentStatus | string, 
+    userIdOrStatus?: string | EnrollmentStatus, 
+    userRole?: string
+  ): Promise<Enrollment> {
+    // Handle overloaded method signatures
+    if (userRole !== undefined) {
+      // Original signature: (enrollmentId, status, userId, userRole)
+      const enrollmentId = enrollmentIdOrUserId;
+      const status = statusOrCourseId as EnrollmentStatus;
+      const userId = userIdOrStatus as string;
+
+      if (!Types.ObjectId.isValid(enrollmentId)) {
+        throw new BadRequestException('Invalid enrollment ID');
+      }
+
+      const enrollment = await this.enrollmentModel.findById(enrollmentId);
+      if (!enrollment) {
+        throw new NotFoundException('Enrollment not found');
+      }
+
+      // Only admin or the enrolled user can update status
+      if (userRole !== 'admin' && enrollment.user.toString() !== userId) {
+        throw new BadRequestException('You can only update your own enrollment status');
+      }
+
+      const updateData: any = { status };
+
+      // Set completion date if marking as completed
+      if (status === EnrollmentStatus.COMPLETED && enrollment.status !== EnrollmentStatus.COMPLETED) {
+        updateData.completedAt = new Date();
+      }
+
+      const updatedEnrollment = await this.enrollmentModel
+        .findByIdAndUpdate(enrollmentId, updateData, { new: true })
+        .populate('course', 'title thumbnail')
+        .exec();
+
+      if (!updatedEnrollment) {
+        throw new NotFoundException('Enrollment not found after update');
+      }
+
+      return updatedEnrollment;
+    } else {
+      // New signature: (userId, courseId, status)
+      const userId = enrollmentIdOrUserId;
+      const courseId = statusOrCourseId as string;
+      const status = userIdOrStatus as EnrollmentStatus;
+
+      if (!Types.ObjectId.isValid(courseId)) {
+        throw new BadRequestException('Invalid course ID');
+      }
+
+      const enrollment = await this.enrollmentModel.findOne({
+        user: userId,
+        course: courseId,
+      });
+
+      if (!enrollment) {
+        throw new NotFoundException('Enrollment not found');
+      }
+
+      const updateData: any = { status };
+
+      // Set completion date if marking as completed
+      if (status === EnrollmentStatus.COMPLETED && enrollment.status !== EnrollmentStatus.COMPLETED) {
+        updateData.completedAt = new Date();
+      }
+
+      const updatedEnrollment = await this.enrollmentModel
+        .findByIdAndUpdate(enrollment._id, updateData, { new: true })
+        .populate('course', 'title thumbnail')
+        .exec();
+
+      if (!updatedEnrollment) {
+        throw new NotFoundException('Enrollment not found after update');
+      }
+
+      return updatedEnrollment;
     }
-
-    const enrollment = await this.enrollmentModel.findById(enrollmentId);
-    if (!enrollment) {
-      throw new NotFoundException('Enrollment not found');
-    }
-
-    // Only admin or the enrolled user can update status
-    if (userRole !== 'admin' && enrollment.user.toString() !== userId) {
-      throw new BadRequestException('You can only update your own enrollment status');
-    }
-
-    const updateData: any = { status };
-
-    // Set completion date if marking as completed
-    if (status === EnrollmentStatus.COMPLETED && enrollment.status !== EnrollmentStatus.COMPLETED) {
-      updateData.completedAt = new Date();
-    }
-
-    const updatedEnrollment = await this.enrollmentModel
-      .findByIdAndUpdate(enrollmentId, updateData, { new: true })
-      .populate('course', 'title thumbnail')
-      .exec();
-
-    if (!updatedEnrollment) {
-      throw new NotFoundException('Enrollment not found after update');
-    }
-
-    return updatedEnrollment;
   }
 
   async updateProgress(userId: string, courseId: string, progressData: any): Promise<Enrollment> {
