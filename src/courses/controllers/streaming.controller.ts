@@ -1,12 +1,14 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
   UseGuards,
   Request,
   Res,
   Headers,
   Query,
+  Body,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
@@ -84,5 +86,45 @@ export class StreamingController {
   async generatePlaylist(@Param('courseId') courseId: string, @Request() req) {
     const playlist = await this.streamingService.generatePlaylist(courseId, req.user.userId);
     return { playlist };
+  }
+
+  @Post('lecture/:lectureId/progress')
+  @ApiOperation({ summary: 'Update video watch progress' })
+  @ApiResponse({ status: 200, description: 'Progress updated successfully' })
+  @ApiResponse({ status: 403, description: 'Access denied - Not enrolled' })
+  async updateVideoProgress(
+    @Param('lectureId') lectureId: string, 
+    @Request() req,
+    @Body() progressData: { 
+      timeSpent?: number;
+      progressPercentage?: number;
+      completed?: boolean;
+    }
+  ) {
+    await this.streamingService.updateVideoProgress(lectureId, req.user.userId, progressData);
+    return { message: 'Progress updated successfully' };
+  }
+
+  @Get('lecture/:lectureId/check-access')
+  @ApiOperation({ summary: 'Check if user can access video content' })
+  @ApiResponse({ status: 200, description: 'Access check completed' })
+  async checkVideoAccess(@Param('lectureId') lectureId: string, @Request() req) {
+    try {
+      const metadata = await this.streamingService.getVideoMetadata(lectureId, req.user.userId);
+      return {
+        canAccess: true,
+        hasVideo: metadata.hasVideo,
+        hasAudio: metadata.hasAudio,
+        lectureTitle: metadata.title,
+        courseTitle: metadata.course.title,
+        message: 'Access granted'
+      };
+    } catch (error) {
+      return {
+        canAccess: false,
+        error: error.message,
+        message: 'Access denied'
+      };
+    }
   }
 }

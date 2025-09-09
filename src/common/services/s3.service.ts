@@ -130,7 +130,14 @@ export class S3Service {
   }
 
   async uploadLectureVideo(file: Express.Multer.File): Promise<UploadResult> {
-    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg'];
+    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov', 'video/avi'];
+    const maxSizeBytes = 500 * 1024 * 1024; // 500MB limit
+    
+    // Additional validation for video files
+    if (file.size > maxSizeBytes) {
+      throw new BadRequestException(`File size exceeds maximum limit of ${maxSizeBytes / (1024 * 1024)}MB`);
+    }
+    
     return this.uploadFile(file, 'lectures/videos', allowedTypes);
   }
 
@@ -146,5 +153,17 @@ export class S3Service {
       'application/x-zip-compressed',
     ];
     return this.uploadFile(file, 'lectures/resources', allowedTypes);
+  }
+
+  async uploadLectureAudio(file: Express.Multer.File): Promise<UploadResult> {
+    const allowedTypes = ['audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac'];
+    const maxSizeBytes = 100 * 1024 * 1024; // 100MB limit for audio
+    
+    // Additional validation for audio files
+    if (file.size > maxSizeBytes) {
+      throw new BadRequestException(`File size exceeds maximum limit of ${maxSizeBytes / (1024 * 1024)}MB`);
+    }
+    
+    return this.uploadFile(file, 'lectures/audio', allowedTypes);
   }
 }

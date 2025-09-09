@@ -248,6 +248,39 @@ export class S3Controller {
     return this.s3Service.uploadLectureResource(file);
   }
 
+  @Post('upload/lecture-audio')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ 
+    summary: 'Upload lecture audio',
+    description: 'Upload lecture audio files (MP3, WAV, OGG, AAC only)'
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Lecture audio file',
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Audio file (MP3, WAV, OGG, AAC)'
+        }
+      },
+      required: ['file']
+    }
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Lecture audio uploaded successfully'
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file type or missing file' })
+  async uploadLectureAudio(@UploadedFile() file: Express.Multer.File): Promise<UploadResult> {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    return this.s3Service.uploadLectureAudio(file);
+  }
+
   @Delete(':key')
   @ApiOperation({ 
     summary: 'Delete a file from S3',

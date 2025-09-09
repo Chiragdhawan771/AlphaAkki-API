@@ -18,67 +18,139 @@ export class StreamingService {
   ) {}
 
   async streamVideo(lectureId: string, userId: string, res: Response, range?: string): Promise<void> {
-    if (!Types.ObjectId.isValid(lectureId)) {
-      throw new BadRequestException('Invalid lecture ID');
-    }
-
-    // Get lecture details
-    const lecture = await this.lectureModel
-      .findById(lectureId)
-      .populate('course', 'instructor type')
-      .exec();
-
-    if (!lecture) {
-      throw new NotFoundException('Lecture not found');
-    }
-
-    if (!lecture.videoUrl || !lecture.videoKey) {
-      throw new BadRequestException('No video content available for this lecture');
-    }
-
-    // Check access permissions
-    await this.checkVideoAccess(lecture, userId);
-
     try {
-      // Generate signed URL for S3 video
+      if (!Types.ObjectId.isValid(lectureId)) {
+        res.status(400).json({ 
+          error: 'Invalid lecture ID', 
+          message: 'Please provide a valid lecture ID' 
+        });
+        return;
+      }
+
+      // Get lecture details with proper population
+      const lecture = await this.lectureModel
+        .findById(lectureId)
+        .populate('course', 'instructor type title price')
+        .exec();
+
+      if (!lecture) {
+        res.status(404).json({ 
+          error: 'Lecture not found', 
+          message: 'The requested lecture does not exist' 
+        });
+        return;
+      }
+
+      // Check if lecture is active
+      if (!lecture.isActive) {
+        res.status(403).json({ 
+          error: 'Lecture not available', 
+          message: 'This lecture is currently not available for streaming' 
+        });
+        return;
+      }
+
+      if (!lecture.videoUrl || !lecture.videoKey) {
+        res.status(400).json({ 
+          error: 'No video content', 
+          message: 'No video content is available for this lecture' 
+        });
+        return;
+      }
+
+      // Check access permissions
+      await this.checkVideoAccess(lecture, userId);
+
+      // Generate signed URL for S3 video with appropriate expiry
       const signedUrl = await this.s3Service.getSignedUrl(lecture.videoKey, 3600); // 1 hour expiry
 
-      // For streaming, we'll redirect to the signed URL or implement range requests
+      // Set common headers for video streaming
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      // Handle range requests for progressive video streaming
       if (range) {
-        // Handle range requests for video streaming
         await this.handleRangeRequest(signedUrl, range, res);
       } else {
         // Simple redirect to signed URL
-        res.redirect(signedUrl);
+        res.redirect(302, signedUrl);
       }
     } catch (error) {
-      throw new BadRequestException(`Failed to stream video: ${error.message}`);
+      console.error('Error streaming video:', error);
+      
+      if (error instanceof ForbiddenException) {
+        res.status(403).json({ 
+          error: 'Access denied', 
+          message: error.message 
+        });
+      } else if (error instanceof NotFoundException) {
+        res.status(404).json({ 
+          error: 'Not found', 
+          message: error.message 
+        });
+      } else if (error instanceof BadRequestException) {
+        res.status(400).json({ 
+          error: 'Bad request', 
+          message: error.message 
+        });
+      } else {
+        res.status(500).json({ 
+          error: 'Internal server error', 
+          message: 'Failed to stream video. Please try again later.' 
+        });
+      }
     }
   }
 
   async getVideoStreamUrl(lectureId: string, userId: string): Promise<string> {
-    if (!Types.ObjectId.isValid(lectureId)) {
-      throw new BadRequestException('Invalid lecture ID');
+    try {
+      if (!Types.ObjectId.isValid(lectureId)) {
+        throw new BadRequestException('Invalid lecture ID format');
+      }
+
+      const lecture = await this.lectureModel
+        .findById(lectureId)
+        .populate('course', 'instructor type title price')
+        .exec();
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
+      }
+
+      if (!lecture.isActive) {
+        throw new ForbiddenException('This lecture is not available for streaming');
+      }
+
+      if (!lecture.videoUrl || !lecture.videoKey) {
+        throw new BadRequestException('No video content available for this lecture');
+      }
+
+      // Check access permissions
+      await this.checkVideoAccess(lecture, userId);
+
+      // Generate signed URL with appropriate expiry for streaming
+      const signedUrl = await this.s3Service.getSignedUrl(lecture.videoKey, 7200); // 2 hours expiry
+      
+      if (!signedUrl) {
+        throw new BadRequestException('Failed to generate video stream URL');
+      }
+
+      return signedUrl;
+    } catch (error) {
+      // Re-throw known exceptions
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException || 
+          error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      // Log unexpected errors
+      console.error('Error generating video stream URL:', error);
+      throw new BadRequestException('Failed to generate video stream URL');
     }
-
-    const lecture = await this.lectureModel
-      .findById(lectureId)
-      .populate('course', 'instructor type')
-      .exec();
-
-    if (!lecture) {
-      throw new NotFoundException('Lecture not found');
-    }
-
-    if (!lecture.videoUrl || !lecture.videoKey) {
-      throw new BadRequestException('No video content available for this lecture');
-    }
-
-    // Check access permissions
-    await this.checkVideoAccess(lecture, userId);
-
-    // Generate signed URL with longer expiry for streaming
-    return this.s3Service.getSignedUrl(lecture.videoKey, 7200); // 2 hours expiry
   }
 
   async getAudioStreamUrl(lectureId: string, userId: string): Promise<string> {
@@ -151,38 +223,57 @@ export class StreamingService {
       return; // Course instructors can access all content
     }
 
-    // Check if user is enrolled in the course
-    const isEnrolled = await this.enrollmentsService.isUserEnrolled(userId, course._id.toString());
-    if (!isEnrolled) {
-      throw new ForbiddenException('You must be enrolled in this course to access this content');
+    // Check if user is enrolled in the course with active or completed status
+    const enrollment = await this.enrollmentModel.findOne({
+      user: userId,
+      course: course._id,
+      status: { $in: ['active', 'completed'] }
+    });
+
+    if (!enrollment) {
+      throw new ForbiddenException('You must be enrolled in this course to access this content. Please enroll first.');
     }
 
     // For paid courses, verify payment status
     if (course.type === 'paid') {
-      const enrollment = await this.enrollmentModel.findOne({
-        user: userId,
-        course: course._id,
-        paymentStatus: 'completed'
-      });
-
-      if (!enrollment) {
-        throw new ForbiddenException('Payment required to access this content');
+      // Check if payment status exists and is completed, or if course is free
+      if (enrollment.paymentStatus && enrollment.paymentStatus !== 'completed') {
+        throw new ForbiddenException('Payment is required to access this content. Please complete your payment.');
+      }
+      
+      // If no payment status field exists (older enrollments), check if amount was paid
+      if (!enrollment.paymentStatus && course.price > 0 && (enrollment.amountPaid || 0) < course.price) {
+        throw new ForbiddenException('Payment is required to access this content. Please complete your payment.');
       }
     }
   }
 
   private async handleRangeRequest(url: string, range: string, res: Response): Promise<void> {
-    // This is a simplified implementation
-    // In a production environment, you might want to proxy the range request to S3
-    // or implement a more sophisticated streaming solution
-    
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : undefined;
+    try {
+      // Parse range header
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : undefined;
 
-    // For now, redirect to the signed URL
-    // The client can handle range requests directly with S3
-    res.redirect(url);
+      // Set appropriate headers for range request
+      res.status(206); // Partial Content
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Type', 'video/mp4');
+      
+      // Add range headers
+      if (end) {
+        res.setHeader('Content-Range', `bytes ${start}-${end}/*`);
+        res.setHeader('Content-Length', (end - start + 1).toString());
+      } else {
+        res.setHeader('Content-Range', `bytes ${start}-/*`);
+      }
+
+      // For S3, we can use signed URLs with range headers
+      // The client will handle the actual range request to S3
+      res.redirect(url);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to handle range request' });
+    }
   }
 
   async getVideoMetadata(lectureId: string, userId: string): Promise<any> {
@@ -274,5 +365,45 @@ export class StreamingService {
     );
 
     return playlist;
+  }
+
+  async updateVideoProgress(lectureId: string, userId: string, progressData: any): Promise<void> {
+    try {
+      if (!Types.ObjectId.isValid(lectureId)) {
+        throw new BadRequestException('Invalid lecture ID');
+      }
+
+      const lecture = await this.lectureModel
+        .findById(lectureId)
+        .populate('course', '_id')
+        .exec();
+
+      if (!lecture) {
+        throw new NotFoundException('Lecture not found');
+      }
+
+      // Update enrollment progress
+      await this.enrollmentsService.updateProgress(
+        userId, 
+        lecture.course._id.toString(), 
+        {
+          lectureId,
+          timeSpent: progressData.timeSpent || 0,
+          progressPercentage: progressData.progressPercentage || 0,
+          completedLecture: progressData.completed ? lectureId : null
+        }
+      );
+
+      // Update watched videos list
+      if (progressData.completed || progressData.progressPercentage >= 90) {
+        await this.enrollmentModel.updateOne(
+          { user: userId, course: lecture.course._id },
+          { $addToSet: { watchedVideos: lectureId } }
+        );
+      }
+    } catch (error) {
+      console.error('Error updating video progress:', error);
+      // Don't throw error for progress updates to avoid breaking video playback
+    }
   }
 }
