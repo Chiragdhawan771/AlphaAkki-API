@@ -23,10 +23,17 @@ async function bootstrap() {
 
   // Swagger configuration
   const config = new DocumentBuilder()
-    .setTitle('AlphaAkki CMS API')
-    .setDescription('Content Management System API with authentication and user management')
+    .setTitle('AlphaAkki LMS API')
+    .setDescription('Learning Management System API - Only Active & Working Endpoints')
     .setVersion('1.0')
-    .addTag('auth', 'Authentication endpoints')
+    .addTag('auth', 'Authentication & User Management')
+    .addTag('simplified-courses', 'Simplified Course Management')
+    .addTag('lectures', 'Lecture Content Management')
+    .addTag('enrollments', 'Course Enrollments')
+    .addTag('progress', 'Learning Progress Tracking')
+    .addTag('streaming', 'Video & Resource Streaming')
+    .addTag('payments', 'Payment Processing')
+    .addTag('reviews', 'Course Reviews & Ratings')
     .addBearerAuth(
       {
         type: 'http',
@@ -48,6 +55,16 @@ async function bootstrap() {
   });
 
   console.log('📚 Swagger documentation available at: http://localhost:3000/api');
+  console.log('🧹 API cleaned up - Only active & working endpoints are documented');
+  console.log('🏷️  Available API Tags:');
+  console.log('   - auth: Authentication & User Management');
+  console.log('   - simplified-courses: Course Management');
+  console.log('   - lectures: Lecture Content');
+  console.log('   - enrollments: Course Enrollments');
+  console.log('   - progress: Learning Progress');
+  console.log('   - streaming: Video Streaming');
+  console.log('   - payments: Payment Processing');
+  console.log('   - reviews: Course Reviews');
 
   await app.listen(process.env.PORT ?? 3000);
 }

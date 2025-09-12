@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Course, CourseSchema } from './schemas/course.schema';
-import { Section, SectionSchema } from './schemas/section.schema';
 import { Lecture, LectureSchema } from './schemas/lecture.schema';
 import { Enrollment, EnrollmentSchema } from './schemas/enrollment.schema';
 import { Progress, ProgressSchema } from './schemas/progress.schema';
@@ -16,6 +15,12 @@ import { PaymentService } from './services/payment.service';
 import { PaymentController } from './controllers/payment.controller';
 import { EnrollmentsService } from './services/enrollments.service';
 import { EnrollmentsController } from './controllers/enrollments.controller';
+import { LecturesService } from './services/lectures.service';
+import { LecturesController } from './controllers/lectures.controller';
+import { StreamingService } from './services/streaming.service';
+import { StreamingController } from './controllers/streaming.controller';
+import { ProgressService } from './services/progress.service';
+import { ProgressController } from './controllers/progress.controller';
 import { CommonModule } from '../common/common.module';
 import { UsersModule } from '../users/users.module';
 
@@ -23,7 +28,6 @@ import { UsersModule } from '../users/users.module';
   imports: [
     MongooseModule.forFeature([
       { name: Course.name, schema: CourseSchema },
-      { name: Section.name, schema: SectionSchema },
       { name: Lecture.name, schema: LectureSchema },
       { name: Enrollment.name, schema: EnrollmentSchema },
       { name: Progress.name, schema: ProgressSchema },
@@ -39,18 +43,27 @@ import { UsersModule } from '../users/users.module';
     ReviewService,
     PaymentService,
     EnrollmentsService,
+    LecturesService,
+    StreamingService,
+    ProgressService,
   ],
   controllers: [
     SimplifiedCoursesController,
     ReviewController,
     PaymentController,
     EnrollmentsController,
+    LecturesController,
+    StreamingController,
+    ProgressController,
   ],
   exports: [
     SimplifiedCoursesService,
     ReviewService,
     PaymentService,
     EnrollmentsService,
+    LecturesService,
+    StreamingService,
+    ProgressService,
   ],
 })
 export class CoursesModule {}

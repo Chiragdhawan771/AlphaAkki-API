@@ -1,10 +1,11 @@
-import { IsOptional, IsString, IsEnum, IsNumber, IsBoolean, Min, Max } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsNumber, IsEnum, IsArray, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CourseLevel, CourseType, CourseStatus } from '../schemas/course.schema';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { CourseLevel, CourseType } from './create-course.dto';
+import { CourseStatus } from './publish-course.dto';
 
 export class QueryCourseDto {
-  @ApiPropertyOptional({ description: 'Search query for title and description' })
+  @ApiPropertyOptional({ description: 'Search term for title or description' })
   @IsOptional()
   @IsString()
   search?: string;
@@ -29,10 +30,21 @@ export class QueryCourseDto {
   @IsString()
   category?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by categories' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
   @ApiPropertyOptional({ description: 'Filter by instructor ID' })
   @IsOptional()
   @IsString()
   instructor?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by instructor ID' })
+  @IsOptional()
+  @IsString()
+  instructorId?: string;
 
   @ApiPropertyOptional({ description: 'Filter by featured courses' })
   @IsOptional()
@@ -43,47 +55,40 @@ export class QueryCourseDto {
   @ApiPropertyOptional({ description: 'Minimum price filter' })
   @IsOptional()
   @IsNumber()
-  @Min(0)
   @Type(() => Number)
   minPrice?: number;
 
   @ApiPropertyOptional({ description: 'Maximum price filter' })
   @IsOptional()
   @IsNumber()
-  @Min(0)
   @Type(() => Number)
   maxPrice?: number;
 
   @ApiPropertyOptional({ description: 'Minimum rating filter' })
   @IsOptional()
   @IsNumber()
-  @Min(0)
-  @Max(5)
   @Type(() => Number)
   minRating?: number;
 
-  @ApiPropertyOptional({ description: 'Sort by field', enum: ['createdAt', 'title', 'price', 'rating', 'enrollmentCount'] })
+  @ApiPropertyOptional({ description: 'Page number for pagination', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Number of items per page', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number = 10;
+
+  @ApiPropertyOptional({ description: 'Sort field', default: 'createdAt' })
   @IsOptional()
   @IsString()
-  sortBy?: string;
+  sortBy?: string = 'createdAt';
 
-  @ApiPropertyOptional({ description: 'Sort order', enum: ['asc', 'desc'] })
+  @ApiPropertyOptional({ description: 'Sort order', enum: ['asc', 'desc'], default: 'desc' })
   @IsOptional()
   @IsString()
-  sortOrder?: 'asc' | 'desc';
-
-  @ApiPropertyOptional({ description: 'Page number', default: 1 })
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  @Type(() => Number)
-  page?: number;
-
-  @ApiPropertyOptional({ description: 'Items per page', default: 10 })
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  @Max(100)
-  @Type(() => Number)
-  limit?: number;
+  sortOrder?: 'asc' | 'desc' = 'desc';
 }
