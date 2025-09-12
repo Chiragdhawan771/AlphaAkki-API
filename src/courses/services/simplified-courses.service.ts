@@ -38,10 +38,12 @@ export class SimplifiedCoursesService {
 
     // If user is not admin/instructor, check if they're enrolled
     if (userRole !== 'admin' && course.instructor.toString() !== userId) {
+      const userObjId = new Types.ObjectId(userId);
+      const courseObjId = new Types.ObjectId(id);
       const enrollment = await this.enrollmentModel.findOne({
-        user: userId,
-        course: id,
-        status: 'active'
+        user: userObjId,
+        course: courseObjId,
+        status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
       });
       if (!enrollment) {
         throw new ForbiddenException('You must be enrolled to view this course');
@@ -227,10 +229,12 @@ export class SimplifiedCoursesService {
 
   // User: Get course with videos (only if enrolled)
   async getCourseWithVideos(courseId: string, userId: string) {
+    const userObjId = new Types.ObjectId(userId);
+    const courseObjId = new Types.ObjectId(courseId);
     const enrollment = await this.enrollmentModel.findOne({
-      user: userId,
-      course: courseId,
-      status: 'active'
+      user: userObjId,
+      course: courseObjId,
+      status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
     });
 
     if (!enrollment) {
@@ -241,8 +245,54 @@ export class SimplifiedCoursesService {
       .findById(courseId)
       .populate('instructor', 'firstName lastName email');
 
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    // Generate secure URLs for all videos with shorter expiry for security
+    const videosWithSecureUrls = await Promise.all(
+      course.videos.map(async (video, index) => {
+        try {
+          // Generate signed URL with 30 minutes expiry for better security
+          const signedUrl = await this.s3Service.getSignedUrl(video.videoKey, 1800);
+          return {
+            title: video.title,
+            videoUrl: signedUrl,
+            videoKey: video.videoKey,
+            duration: video.duration,
+            order: video.order,
+            uploadedAt: video.uploadedAt,
+            // Add streaming optimizations
+            streamingOptions: {
+              adaptiveBitrate: true,
+              enableChunking: true,
+              bufferSize: '5MB'
+            }
+          };
+        } catch (error) {
+          console.error(`Failed to generate signed URL for video ${index}:`, error);
+          return {
+            title: video.title,
+            videoUrl: video.videoUrl,
+            videoKey: video.videoKey,
+            duration: video.duration,
+            order: video.order,
+            uploadedAt: video.uploadedAt,
+            streamingOptions: {
+              adaptiveBitrate: false,
+              enableChunking: false,
+              bufferSize: '1MB'
+            }
+          };
+        }
+      })
+    );
+
     return {
-      course,
+      course: {
+        ...course.toObject(),
+        videos: videosWithSecureUrls
+      },
       enrollment,
       watchedVideos: enrollment.watchedVideos
     };
@@ -301,10 +351,12 @@ export class SimplifiedCoursesService {
       // Admin or course instructor can access any video
     } else {
       // Regular users must be enrolled
+      const userObjId = new Types.ObjectId(userId);
+      const courseObjId = new Types.ObjectId(courseId);
       const enrollment = await this.enrollmentModel.findOne({
-        user: userId,
-        course: courseId,
-        status: 'active'
+        user: userObjId,
+        course: courseObjId,
+        status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
       });
 
       if (!enrollment) {

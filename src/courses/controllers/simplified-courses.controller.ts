@@ -195,4 +195,5 @@ export class SimplifiedCoursesController {
     }
     return this.coursesService.remove(id, req.user._id, req.user.role);
   }
+
 }
