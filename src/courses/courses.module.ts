@@ -7,6 +7,8 @@ import { Progress, ProgressSchema } from './schemas/progress.schema';
 import { SimplifiedCourse, SimplifiedCourseSchema } from './schemas/simplified-course.schema';
 import { Review, ReviewSchema } from './schemas/review.schema';
 import { Payment, PaymentSchema } from './schemas/payment.schema';
+import { CoursesService } from './courses.service';
+import { CoursesController } from './controllers/courses.controller';
 import { ReviewService } from './services/review.service';
 import { ReviewController } from './controllers/review.controller';
 import { SimplifiedCoursesService } from './services/simplified-courses.service';
@@ -39,6 +41,7 @@ import { UsersModule } from '../users/users.module';
     UsersModule,
   ],
   providers: [
+    CoursesService,
     SimplifiedCoursesService,
     ReviewService,
     PaymentService,
@@ -48,6 +51,7 @@ import { UsersModule } from '../users/users.module';
     ProgressService,
   ],
   controllers: [
+    CoursesController,
     SimplifiedCoursesController,
     ReviewController,
     PaymentController,
@@ -57,6 +61,7 @@ import { UsersModule } from '../users/users.module';
     ProgressController,
   ],
   exports: [
+    CoursesService,
     SimplifiedCoursesService,
     ReviewService,
     PaymentService,

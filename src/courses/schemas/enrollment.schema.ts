@@ -48,8 +48,17 @@ export class Enrollment {
   @Prop()
   paymentId: string;
 
+  @Prop({ enum: Object.values(PaymentStatus), default: PaymentStatus.PENDING })
+  paymentStatus: PaymentStatus;
+
   @Prop({ default: [] })
   watchedVideos: string[]; // Array of video IDs that user has watched
+
+  @Prop({ type: [String], default: [] })
+  completedLectures: string[]; // Array of completed lecture IDs
+
+  @Prop({ type: Types.ObjectId, ref: 'Lecture' })
+  lastAccessedLecture: Types.ObjectId;
 
   @Prop()
   lastAccessedAt: Date;
