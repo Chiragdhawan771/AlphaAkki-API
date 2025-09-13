@@ -48,6 +48,13 @@ export class User {
   @Prop({ default: false })
   isVerified: boolean;
 
+  // Password Reset Fields
+  @Prop()
+  passwordResetToken: string;
+
+  @Prop()
+  passwordResetExpires: Date;
+
   // Timestamps
   createdAt?: Date;
   updatedAt?: Date;
