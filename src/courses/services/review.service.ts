@@ -16,16 +16,59 @@ export class ReviewService {
 
   // User: Create a review (only if enrolled and completed)
   async createReview(courseId: string, userId: string, createReviewDto: CreateReviewDto) {
-    // Check if user is enrolled in the course
-    const enrollment = await this.enrollmentModel.findOne({
-      student: userId,
-      course: courseId,
+    console.log('Review creation attempt:', { courseId, userId });
+    
+    // Convert string IDs to ObjectIds for proper MongoDB querying
+    const userObjectId = new Types.ObjectId(userId);
+    const courseObjectId = new Types.ObjectId(courseId);
+    
+    // Check if user is enrolled in the course - try both field names for compatibility
+    let enrollment = await this.enrollmentModel.findOne({
+      user: userObjectId,
+      course: courseObjectId,
       status: 'active'
     });
 
+    // Fallback: try with 'student' field in case of schema mismatch
     if (!enrollment) {
+      enrollment = await this.enrollmentModel.findOne({
+        student: userObjectId,
+        course: courseObjectId,
+        status: 'active'
+      });
+    }
+
+    // Also try without status filter in case enrollment status is different
+    if (!enrollment) {
+      enrollment = await this.enrollmentModel.findOne({
+        user: userObjectId,
+        course: courseObjectId
+      });
+      console.log('Enrollment found without status filter:', enrollment);
+    }
+
+    // Try with string IDs as fallback
+    if (!enrollment) {
+      enrollment = await this.enrollmentModel.findOne({
+        user: userId,
+        course: courseId
+      });
+      console.log('Enrollment found with string IDs:', enrollment);
+    }
+
+    if (!enrollment) {
+      // Try to find any enrollment for this user to debug
+      const anyEnrollment = await this.enrollmentModel.findOne({ user: userObjectId });
+      console.log('Any enrollment for user:', anyEnrollment);
+      
+      // Also try to find enrollments for this course
+      const courseEnrollments = await this.enrollmentModel.find({ course: courseObjectId });
+      console.log('All enrollments for course:', courseEnrollments);
+      
       throw new ForbiddenException('You must be enrolled in this course to leave a review');
     }
+
+    console.log('Enrollment found:', enrollment);
 
     // Check if course exists
     const course = await this.courseModel.findById(courseId);
