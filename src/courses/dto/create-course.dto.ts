@@ -1,113 +1,69 @@
-import { IsString, IsOptional, IsEnum, IsNumber, IsArray, IsBoolean, Min, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CourseLevel, CourseType } from '../schemas/course.schema';
+
+export enum CourseLevel {
+  BEGINNER = 'beginner',
+  INTERMEDIATE = 'intermediate',
+  ADVANCED = 'advanced'
+}
+
+export enum CourseType {
+  FREE = 'free',
+  PAID = 'paid',
+  PREMIUM = 'premium'
+}
 
 export class CreateCourseDto {
-  @ApiProperty({ description: 'Course title', example: 'Complete Web Development Bootcamp' })
+  @ApiProperty({ description: 'Title of the course' })
   @IsString()
-  @MinLength(5, { message: 'Title must be at least 5 characters long' })
-  @MaxLength(100, { message: 'Title must not exceed 100 characters' })
   title: string;
 
-  @ApiProperty({ description: 'Course description', example: 'Learn full-stack web development from scratch' })
-  @IsString()
-  @MinLength(20, { message: 'Description must be at least 20 characters long' })
-  @MaxLength(5000, { message: 'Description must not exceed 5000 characters' })
-  description: string;
-
-  @ApiPropertyOptional({ description: 'Short description for course cards', example: 'Learn web development basics' })
+  @ApiPropertyOptional({ description: 'Description of the course' })
   @IsOptional()
   @IsString()
-  @MaxLength(200, { message: 'Short description must not exceed 200 characters' })
-  shortDescription?: string;
+  description?: string;
 
-  @ApiPropertyOptional({ enum: CourseLevel, description: 'Course difficulty level', example: CourseLevel.BEGINNER })
-  @IsOptional()
-  @IsEnum(CourseLevel, { message: 'Level must be beginner, intermediate, or advanced' })
-  level?: CourseLevel;
-
-  @ApiPropertyOptional({ description: 'Course language', example: 'English', default: 'English' })
-  @IsOptional()
+  @ApiProperty({ description: 'Instructor ID' })
   @IsString()
-  language?: string;
+  instructorId: string;
 
-  @ApiPropertyOptional({ description: 'Course duration in minutes', example: 1200 })
-  @IsOptional()
-  @IsNumber({}, { message: 'Duration must be a number' })
-  @Min(0, { message: 'Duration must be positive' })
-  duration?: number;
+  @ApiProperty({ enum: CourseLevel, description: 'Difficulty level' })
+  @IsEnum(CourseLevel)
+  level: CourseLevel;
 
-  @ApiPropertyOptional({ description: 'Course price', example: 99.99 })
+  @ApiPropertyOptional({ description: 'Course price' })
   @IsOptional()
-  @IsNumber({}, { message: 'Price must be a number' })
-  @Min(0, { message: 'Price must be positive' })
+  @IsNumber()
   price?: number;
 
-  @ApiPropertyOptional({ enum: CourseType, description: 'Course type', example: CourseType.PAID })
-  @IsOptional()
-  @IsEnum(CourseType, { message: 'Type must be free or paid' })
-  type?: CourseType;
+  @ApiProperty({ enum: CourseType, description: 'Course type' })
+  @IsEnum(CourseType)
+  type: CourseType;
 
-  @ApiPropertyOptional({ description: 'Course thumbnail URL', example: 'https://example.com/thumbnail.jpg' })
-  @IsOptional()
-  @IsString()
-  thumbnail?: string;
-
-  @ApiPropertyOptional({ description: 'Course preview video URL', example: 'https://example.com/preview.mp4' })
-  @IsOptional()
-  @IsString()
-  previewVideo?: string;
-
-  @ApiPropertyOptional({ description: 'Course categories', example: ['Web Development', 'Programming'] })
+  @ApiPropertyOptional({ description: 'Course categories' })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   categories?: string[];
 
-  @ApiPropertyOptional({ description: 'Course tags', example: ['javascript', 'react', 'nodejs'] })
+  @ApiPropertyOptional({ description: 'Course tags' })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
 
-  @ApiPropertyOptional({ description: 'Is course featured', example: false })
-  @IsOptional()
-  @IsBoolean()
-  isFeatured?: boolean;
-
-  @ApiPropertyOptional({ description: 'Course requirements', example: ['Basic computer knowledge', 'Internet connection'] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  requirements?: string[];
-
-  @ApiPropertyOptional({ description: 'What students will learn', example: ['HTML & CSS', 'JavaScript fundamentals'] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  whatYouWillLearn?: string[];
-
-  @ApiPropertyOptional({ description: 'Target audience', example: ['Beginners', 'Career changers'] })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  targetAudience?: string[];
-
-  @ApiPropertyOptional({ description: 'SEO meta title' })
+  @ApiPropertyOptional({ description: 'Thumbnail URL' })
   @IsOptional()
   @IsString()
-  @MaxLength(60, { message: 'Meta title must not exceed 60 characters' })
-  metaTitle?: string;
+  thumbnailUrl?: string;
 
-  @ApiPropertyOptional({ description: 'SEO meta description' })
+  @ApiPropertyOptional({ description: 'Preview video URL' })
   @IsOptional()
   @IsString()
-  @MaxLength(160, { message: 'Meta description must not exceed 160 characters' })
-  metaDescription?: string;
+  previewVideoUrl?: string;
 
-  @ApiPropertyOptional({ description: 'SEO keywords', example: ['web development', 'programming'] })
+  @ApiPropertyOptional({ description: 'Estimated duration in hours' })
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  metaKeywords?: string[];
+  @IsNumber()
+  estimatedDuration?: number;
 }

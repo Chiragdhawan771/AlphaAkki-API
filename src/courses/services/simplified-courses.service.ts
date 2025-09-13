@@ -36,12 +36,14 @@ export class SimplifiedCoursesService {
       throw new NotFoundException('Course not found');
     }
 
-    // If userId and userRole are provided, check enrollment for protected content
-    if (userId && userRole && userRole !== 'admin' && course.instructor.toString() !== userId) {
+    // If user is not admin/instructor, check if they're enrolled
+    if (userRole !== 'admin' && course.instructor.toString() !== userId) {
+      const userObjId = new Types.ObjectId(userId);
+      const courseObjId = new Types.ObjectId(id);
       const enrollment = await this.enrollmentModel.findOne({
-        user: userId,
-        course: id,
-        status: 'active'
+        user: userObjId,
+        course: courseObjId,
+        status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
       });
       if (!enrollment) {
         throw new ForbiddenException('You must be enrolled to view this course');
@@ -227,9 +229,18 @@ export class SimplifiedCoursesService {
 
   // User: Get course with videos (only if enrolled)
   async getCourseWithVideos(courseId: string, userId: string) {
-    console.log('DEBUG: getCourseWithVideos called with:', { courseId, userId });
-    
-    // First check if course exists
+    const userObjId = new Types.ObjectId(userId);
+    const courseObjId = new Types.ObjectId(courseId);
+    const enrollment = await this.enrollmentModel.findOne({
+      user: userObjId,
+      course: courseObjId,
+      status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
+    });
+
+    if (!enrollment) {
+      throw new ForbiddenException('You must be enrolled to access course content');
+    }
+
     const course = await this.courseModel
       .findById(courseId)
       .populate('instructor', 'firstName lastName email');
@@ -238,64 +249,52 @@ export class SimplifiedCoursesService {
       throw new NotFoundException('Course not found');
     }
 
-    console.log('DEBUG: Course found:', { courseId: course._id, type: course.type });
-
-    // Check enrollment with multiple query variations
-    let enrollment = await this.enrollmentModel.findOne({
-      user: userId,
-      course: courseId,
-      status: { $in: ['active', 'completed'] }
-    });
-
-    console.log('DEBUG: Initial enrollment lookup result:', enrollment);
-
-    // If not found, try with ObjectId conversion
-    if (!enrollment) {
-      const { Types } = require('mongoose');
-      enrollment = await this.enrollmentModel.findOne({
-        user: new Types.ObjectId(userId),
-        course: new Types.ObjectId(courseId),
-        status: { $in: ['active', 'completed'] }
-      });
-      console.log('DEBUG: ObjectId enrollment lookup result:', enrollment);
-    }
-
-    // If still not found, check all enrollments for this user
-    if (!enrollment) {
-      const allUserEnrollments = await this.enrollmentModel.find({ user: userId });
-      console.log('DEBUG: All user enrollments:', allUserEnrollments.map(e => ({ 
-        course: e.course.toString(), 
-        status: e.status,
-        user: e.user.toString() 
-      })));
-    }
-
-    if (!enrollment) {
-      // If course is free, auto-enroll the user
-      if (course.type === 'free') {
-        enrollment = new this.enrollmentModel({
-          user: userId,
-          course: courseId,
-          status: 'active',
-          amountPaid: 0
-        });
-        await enrollment.save();
-        
-        // Update enrollment count
-        await this.courseModel.findByIdAndUpdate(courseId, {
-          $inc: { enrollmentCount: 1 }
-        });
-        console.log('DEBUG: Auto-enrolled user in free course');
-      } else {
-        console.log('DEBUG: Paid course, enrollment required');
-        throw new ForbiddenException('You must be enrolled to access course content');
-      }
-    }
+    // Generate secure URLs for all videos with shorter expiry for security
+    const videosWithSecureUrls = await Promise.all(
+      course.videos.map(async (video, index) => {
+        try {
+          // Generate signed URL with 30 minutes expiry for better security
+          const signedUrl = await this.s3Service.getSignedUrl(video.videoKey, 1800);
+          return {
+            title: video.title,
+            videoUrl: signedUrl,
+            videoKey: video.videoKey,
+            duration: video.duration,
+            order: video.order,
+            uploadedAt: video.uploadedAt,
+            // Add streaming optimizations
+            streamingOptions: {
+              adaptiveBitrate: true,
+              enableChunking: true,
+              bufferSize: '5MB'
+            }
+          };
+        } catch (error) {
+          console.error(`Failed to generate signed URL for video ${index}:`, error);
+          return {
+            title: video.title,
+            videoUrl: video.videoUrl,
+            videoKey: video.videoKey,
+            duration: video.duration,
+            order: video.order,
+            uploadedAt: video.uploadedAt,
+            streamingOptions: {
+              adaptiveBitrate: false,
+              enableChunking: false,
+              bufferSize: '1MB'
+            }
+          };
+        }
+      })
+    );
 
     return {
-      course,
+      course: {
+        ...course.toObject(),
+        videos: videosWithSecureUrls
+      },
       enrollment,
-      watchedVideos: enrollment.watchedVideos || []
+      watchedVideos: enrollment.watchedVideos
     };
   }
 
@@ -352,10 +351,12 @@ export class SimplifiedCoursesService {
       // Admin or course instructor can access any video
     } else {
       // Regular users must be enrolled
+      const userObjId = new Types.ObjectId(userId);
+      const courseObjId = new Types.ObjectId(courseId);
       const enrollment = await this.enrollmentModel.findOne({
-        user: userId,
-        course: courseId,
-        status: 'active'
+        user: userObjId,
+        course: courseObjId,
+        status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
       });
 
       if (!enrollment) {

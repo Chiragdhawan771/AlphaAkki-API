@@ -3,14 +3,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { SignupDto, LoginDto, UpdateProfileDto, ChangePasswordDto } from './dto';
+import { SignupDto, LoginDto, UpdateProfileDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
+import { EmailService } from '../common/services/email.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
+    private emailService: EmailService,
   ) {}
 
   async signup(signupDto: SignupDto): Promise<{ user: any; access_token: string }> {
@@ -186,5 +189,83 @@ export class AuthService {
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
+    const { email } = forgotPasswordDto;
+
+    // Find user by email
+    const user = await this.userModel.findOne({ email });
+    if (!user) {
+      // Return success message even if user doesn't exist for security
+      return { message: 'If an account with that email exists, we have sent a password reset link.' };
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
+
+    // Save reset token to user
+    await this.userModel.findByIdAndUpdate(user._id, {
+      passwordResetToken: resetToken,
+      passwordResetExpires: resetTokenExpiry,
+    });
+
+    try {
+      // Send reset email
+      await this.emailService.sendPasswordResetEmail(
+        email,
+        resetToken,
+        `${user.firstName} ${user.lastName}`
+      );
+
+      return { message: 'If an account with that email exists, we have sent a password reset link.' };
+    } catch (error) {
+      // Clear reset token if email fails
+      await this.userModel.findByIdAndUpdate(user._id, {
+        passwordResetToken: undefined,
+        passwordResetExpires: undefined,
+      });
+
+      throw new BadRequestException('Failed to send password reset email. Please try again.');
+    }
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
+    const { token, newPassword } = resetPasswordDto;
+
+    // Find user with valid reset token
+    const user = await this.userModel.findOne({
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    // Hash new password
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password and clear reset token
+    await this.userModel.findByIdAndUpdate(user._id, {
+      password: hashedPassword,
+      passwordResetToken: undefined,
+      passwordResetExpires: undefined,
+    });
+
+    try {
+      // Send confirmation email
+      await this.emailService.sendPasswordResetConfirmation(
+        user.email,
+        `${user.firstName} ${user.lastName}`
+      );
+    } catch (error) {
+      console.error('Failed to send password reset confirmation email:', error);
+      // Don't throw error here as password was successfully reset
+    }
+
+    return { message: 'Password has been reset successfully' };
   }
 }
