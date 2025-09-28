@@ -65,7 +65,9 @@ async function bootstrap() {
   console.log('   - streaming: Video Streaming');
   console.log('   - payments: Payment Processing');
   console.log('   - reviews: Course Reviews');
+  
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(port, '0.0.0.0');
 }
 bootstrap();
