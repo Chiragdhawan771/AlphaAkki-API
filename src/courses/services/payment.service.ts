@@ -68,9 +68,12 @@ export class PaymentService {
       });
 
       if (existingPayment) {
-        // Return existing order if created within last 30 minutes
         const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        if (existingPayment.createdAt > thirtyMinutesAgo) {
+        const amountMatchesCurrent = existingPayment.amount === finalAmount;
+        const withinReuseWindow = existingPayment.createdAt > thirtyMinutesAgo;
+
+        // Reuse only if within window AND amount matches current computed amount
+        if (withinReuseWindow && amountMatchesCurrent) {
           return {
             orderId: existingPayment.razorpayOrderId,
             amount: existingPayment.amount,
@@ -82,13 +85,15 @@ export class PaymentService {
             },
             key: this.configService.get<string>('RAZORPAY_KEY_ID'),
           };
-        } else {
-          // Mark old payment as failed
-          existingPayment.status = PaymentStatus.FAILED;
-          existingPayment.failureReason = 'Payment timeout';
-          existingPayment.failedAt = new Date();
-          await existingPayment.save();
         }
+
+        // Otherwise, mark the existing payment as failed to supersede it
+        existingPayment.status = PaymentStatus.FAILED;
+        existingPayment.failureReason = withinReuseWindow && !amountMatchesCurrent
+          ? 'Superseded by updated price/amount'
+          : 'Payment timeout';
+        existingPayment.failedAt = new Date();
+        await existingPayment.save();
       }
 
       // Create Razorpay order
