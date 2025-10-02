@@ -63,7 +63,14 @@ export class S3Service {
         Key: key,
         Body: file.buffer,
         ContentType: file.mimetype,
-        Metadata: metadata,
+        Metadata: metadata
+          ? Object.entries(metadata).reduce<Record<string, string>>((acc, [key, value]) => {
+              if (typeof value === 'string') {
+                acc[key] = value;
+              }
+              return acc;
+            }, {})
+          : undefined,
       });
 
       await this.s3Client.send(command);
