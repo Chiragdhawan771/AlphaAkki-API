@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -42,7 +42,8 @@ export class S3Service {
   async uploadFile(
     file: Express.Multer.File,
     folder: string = 'uploads',
-    allowedMimeTypes?: string[]
+    allowedMimeTypes?: string[],
+    metadata?: Record<string, string | undefined>
   ): Promise<UploadResult> {
     // Validate file type if specified
     if (allowedMimeTypes && !allowedMimeTypes.includes(file.mimetype)) {
@@ -62,6 +63,7 @@ export class S3Service {
         Key: key,
         Body: file.buffer,
         ContentType: file.mimetype,
+        Metadata: metadata,
       });
 
       await this.s3Client.send(command);
@@ -101,6 +103,21 @@ export class S3Service {
       return await getSignedUrl(this.s3Client, command, { expiresIn });
     } catch (error) {
       throw new BadRequestException(`Failed to generate signed URL: ${error.message}`);
+    }
+  }
+
+  async getObjectMetadata(key: string) {
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      const response = await this.s3Client.send(command);
+
+      return response;
+    } catch (error) {
+      throw new BadRequestException(`Failed to retrieve object metadata: ${error.message}`);
     }
   }
 

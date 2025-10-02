@@ -95,11 +95,29 @@ export class SimplifiedCoursesService {
       throw new ForbiddenException('You can only add videos to your own courses');
     }
 
+    let resolvedDuration = typeof addVideoDto.duration === 'number' && !Number.isNaN(addVideoDto.duration)
+      ? Math.max(0, Math.round(addVideoDto.duration))
+      : 0;
+
+    if (resolvedDuration === 0 && videoKey) {
+      try {
+        const metadata = await this.s3Service.getObjectMetadata(videoKey);
+        if (metadata?.Metadata?.duration) {
+          const parsedDuration = Number(metadata.Metadata.duration);
+          if (!Number.isNaN(parsedDuration) && parsedDuration > 0) {
+            resolvedDuration = Math.round(parsedDuration);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to read video metadata for duration:', error);
+      }
+    }
+
     const newVideo = {
       title: addVideoDto.title,
       videoUrl,
       videoKey,
-      duration: addVideoDto.duration || 0,
+      duration: resolvedDuration,
       order: course.videos.length + 1,
       uploadedAt: new Date()
     };

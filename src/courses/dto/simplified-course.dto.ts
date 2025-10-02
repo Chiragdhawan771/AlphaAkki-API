@@ -79,6 +79,10 @@ export class AddVideoDto {
   @Type(() => Number)
   @IsNumber()
   duration?: number;
+
+  @ApiProperty({ description: 'Auto detect duration from uploaded file', required: false, default: false })
+  @IsOptional()
+  autoDetectDuration?: boolean;
 }
 
 export class UpdateSimplifiedCourseDto {
