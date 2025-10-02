@@ -19,7 +19,7 @@ export class EmailService {
   }
 
   async sendPasswordResetEmail(email: string, resetToken: string, userName: string) {
-    const resetUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token=${resetToken}`;
+    const resetUrl = `${this.configService.get('FRONTEND_URL', 'https://www.alphaakki.com')}/reset-password?token=${resetToken}`;
     
     const mailOptions = {
       from: `"AlphaAkki LMS" <gurjinder.singh@sensationsolutions.in>`,
