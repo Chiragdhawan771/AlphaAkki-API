@@ -137,7 +137,7 @@ export class SimplifiedCoursesController {
     // Upload video to S3
     const uploadResult = await this.s3Service.uploadFile(file, 'course-videos');
     
-    return this.coursesService.addVideo(
+    const newVideo = await this.coursesService.addVideo(
       id,
       addVideoDto,
       uploadResult.url,
@@ -145,6 +145,10 @@ export class SimplifiedCoursesController {
       req.user._id,
       req.user.role,
     );
+
+    return {
+      video: newVideo,
+    };
   }
 
   // Admin: Remove video from course

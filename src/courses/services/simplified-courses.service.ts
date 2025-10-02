@@ -21,7 +21,9 @@ export class SimplifiedCoursesService {
       instructor: instructorId,
       videos: []
     });
-    return course.save();
+    const savedCourse = await course.save();
+
+    return savedCourse.videos[savedCourse.videos.length - 1];
   }
 
   // Admin: Get all courses for instructor
@@ -123,7 +125,9 @@ export class SimplifiedCoursesService {
     };
 
     course.videos.push(newVideo);
-    return course.save();
+    await course.save();
+
+    return newVideo;
   }
 
   // Admin: Remove video from course
