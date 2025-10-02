@@ -74,11 +74,21 @@ export class EnrollmentsController {
   @ApiOperation({ summary: 'Check if current user is enrolled in a course' })
   @ApiResponse({ status: 200, description: 'Enrollment status checked' })
   async checkEnrollment(@Param('courseId') courseId: string, @Request() req) {
-    const isEnrolled = await this.enrollmentsService.isUserEnrolled(req.user.userId, courseId);
-    const enrollment = isEnrolled 
+    if (req.user.role === 'admin') {
+      return {
+        isEnrolled: true,
+        enrollment: null,
+      };
+    }
+
+    const isEnrolled = await this.enrollmentsService.isUserEnrolled(
+      req.user.userId,
+      courseId,
+    );
+    const enrollment = isEnrolled
       ? await this.enrollmentsService.getEnrollment(req.user.userId, courseId)
       : null;
-    
+
     return {
       isEnrolled,
       enrollment,

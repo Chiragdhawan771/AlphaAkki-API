@@ -228,16 +228,17 @@ export class SimplifiedCoursesService {
   }
 
   // User: Get course with videos (only if enrolled)
-  async getCourseWithVideos(courseId: string, userId: string) {
+  async getCourseWithVideos(courseId: string, userId: string, userRole?: string) {
     const userObjId = new Types.ObjectId(userId);
     const courseObjId = new Types.ObjectId(courseId);
+    const isAdmin = userRole === 'admin';
     const enrollment = await this.enrollmentModel.findOne({
       user: userObjId,
       course: courseObjId,
       status: { $in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] }
     });
 
-    if (!enrollment) {
+    if (!isAdmin && !enrollment) {
       throw new ForbiddenException('You must be enrolled to access course content');
     }
 
@@ -294,42 +295,44 @@ export class SimplifiedCoursesService {
         videos: videosWithSecureUrls
       },
       enrollment,
-      watchedVideos: enrollment.watchedVideos
+      watchedVideos: enrollment?.watchedVideos || []
     };
   }
 
   // User: Mark video as watched
-  async markVideoAsWatched(courseId: string, videoIndex: number, userId: string) {
+  async markVideoAsWatched(courseId: string, videoIndex: number, userId: string, userRole?: string) {
     const enrollment = await this.enrollmentModel.findOne({
       user: userId,
       course: courseId,
       status: 'active'
     });
 
-    if (!enrollment) {
+    if (!enrollment && userRole !== 'admin') {
       throw new ForbiddenException('You must be enrolled to access course content');
     }
 
-    const videoId = `${courseId}_${videoIndex}`;
-    if (!enrollment.watchedVideos.includes(videoId)) {
-      enrollment.watchedVideos.push(videoId);
-      
-      // Calculate progress
-      const course = await this.courseModel.findById(courseId);
-      if (!course) {
-        throw new NotFoundException('Course not found');
-      }
-      const totalVideos = course.videos.length;
-      const watchedCount = enrollment.watchedVideos.length;
-      enrollment.progress = totalVideos > 0 ? Math.round((watchedCount / totalVideos) * 100) : 0;
-      
-      if (enrollment.progress === 100) {
-        enrollment.status = EnrollmentStatus.COMPLETED;
-        enrollment.completedAt = new Date();
-      }
+    if (enrollment) {
+      const videoId = `${courseId}_${videoIndex}`;
+      if (!enrollment.watchedVideos.includes(videoId)) {
+        enrollment.watchedVideos.push(videoId);
+        
+        // Calculate progress
+        const course = await this.courseModel.findById(courseId);
+        if (!course) {
+          throw new NotFoundException('Course not found');
+        }
+        const totalVideos = course.videos.length;
+        const watchedCount = enrollment.watchedVideos.length;
+        enrollment.progress = totalVideos > 0 ? Math.round((watchedCount / totalVideos) * 100) : 0;
+        
+        if (enrollment.progress === 100) {
+          enrollment.status = EnrollmentStatus.COMPLETED;
+          enrollment.completedAt = new Date();
+        }
 
-      enrollment.lastAccessedAt = new Date();
-      await enrollment.save();
+        enrollment.lastAccessedAt = new Date();
+        await enrollment.save();
+      }
     }
 
     return enrollment;

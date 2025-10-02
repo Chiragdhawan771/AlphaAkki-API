@@ -88,7 +88,7 @@ export class SimplifiedCoursesController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get course content with videos (enrolled users only)' })
   async getCourseContent(@Param('id') id: string, @Request() req) {
-    return this.coursesService.getCourseWithVideos(id, req.user._id);
+    return this.coursesService.getCourseWithVideos(id, req.user._id, req.user.role);
   }
 
   // User: Mark video as watched
@@ -100,7 +100,7 @@ export class SimplifiedCoursesController {
     @Param('videoIndex') videoIndex: number,
     @Request() req,
   ) {
-    return this.coursesService.markVideoAsWatched(id, +videoIndex, req.user._id);
+    return this.coursesService.markVideoAsWatched(id, +videoIndex, req.user._id, req.user.role);
   }
 
   // User/Admin: Get secure video stream URL

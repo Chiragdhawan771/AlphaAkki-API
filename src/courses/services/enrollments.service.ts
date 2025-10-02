@@ -52,6 +52,12 @@ export class EnrollmentsService {
       throw new ConflictException('User is already enrolled in this course');
     }
 
+    // Admin users should automatically have access without explicit enrollment
+    const user = await this.userModel.findById(userId).select('role');
+    if (user?.role === 'admin') {
+      throw new ConflictException('Admin users already have access to all courses');
+    }
+
     // Create enrollment
     const enrollmentData = {
       ...createEnrollmentDto,
@@ -107,6 +113,11 @@ export class EnrollmentsService {
     userId: string,
     courseId: string,
   ): Promise<Enrollment | null> {
+    const user = await this.userModel.findById(userId).select('role');
+    if (user?.role === 'admin') {
+      return null;
+    }
+
     if (!Types.ObjectId.isValid(courseId)) {
       throw new BadRequestException('Invalid course ID');
     }
@@ -273,6 +284,11 @@ export class EnrollmentsService {
   }
 
   async isUserEnrolled(userId: string, courseId: string): Promise<boolean> {
+    const user = await this.userModel.findById(userId).select('role');
+    if (user?.role === 'admin') {
+      return true;
+    }
+
     if (!Types.ObjectId.isValid(courseId)) {
       return false;
     }
