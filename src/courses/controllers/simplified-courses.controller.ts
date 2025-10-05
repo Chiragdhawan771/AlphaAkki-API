@@ -12,12 +12,27 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  UploadedFiles,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SimplifiedCoursesService } from '../services/simplified-courses.service';
-import { CreateSimplifiedCourseDto, UpdateSimplifiedCourseDto, AddVideoDto, EnrollCourseDto } from '../dto/simplified-course.dto';
+import {
+  CreateSimplifiedCourseDto,
+  UpdateSimplifiedCourseDto,
+  AddVideoDto,
+  EnrollCourseDto,
+} from '../dto/simplified-course.dto';
 import { S3Service } from '../../common/services/s3.service';
 
 @ApiTags('simplified-courses')
@@ -26,20 +41,74 @@ export class SimplifiedCoursesController {
   constructor(
     private readonly coursesService: SimplifiedCoursesService,
     private readonly s3Service: S3Service,
-  ) {}
+  ) { }
 
   // Admin: Create course
   @Post()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Create a new course (Admin only)' })
-  @ApiResponse({ status: 201, description: 'Course created successfully' })
-  async create(@Body() createCourseDto: CreateSimplifiedCourseDto, @Request() req) {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
-      throw new BadRequestException('Only admins can create courses');
-    }
-    return this.coursesService.create(createCourseDto, req.user._id);
+@UseGuards(JwtAuthGuard)
+@UseInterceptors(
+  FileFieldsInterceptor([
+    { name: 'thumbnail', maxCount: 1 },
+    { name: 'previewVideo', maxCount: 1 },
+  ]),
+)
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Create a new course (Admin only)' })
+async create(
+  @UploadedFiles()
+  files: { thumbnail?: Express.Multer.File[]; previewVideo?: Express.Multer.File[] },
+  @Body() body: any, // raw FormData strings
+  @Request() req,
+) {
+  if (req.user.role !== 'admin') {
+    throw new BadRequestException('Only admins can create courses');
   }
+
+  if (!files.thumbnail || !files.previewVideo) {
+    throw new BadRequestException('Thumbnail and preview video are required');
+  }
+
+  // Parse and convert fields manually
+  const createCourseDto: CreateSimplifiedCourseDto = {
+    ...body,
+    price: body.price ? Number(body.price) : undefined,
+    estimatedDuration: body.estimatedDuration ? Number(body.estimatedDuration) : undefined,
+    learningOutcomes: body.learningOutcomes
+      ? Array.isArray(body.learningOutcomes)
+        ? body.learningOutcomes
+        : body.learningOutcomes.split(',')
+      : [],
+    prerequisites: body.prerequisites
+      ? Array.isArray(body.prerequisites)
+        ? body.prerequisites
+        : body.prerequisites.split(',')
+      : [],
+    tags: body.tags
+      ? Array.isArray(body.tags)
+        ? body.tags
+        : body.tags.split(',')
+      : [],
+    type: body.type,
+    title: body.title,
+    description: body.description,
+    shortDescription: body.shortDescription,
+    category: body.category,
+  };
+
+  // Upload files to S3
+  const thumbnailUpload = await this.s3Service.uploadFile(files.thumbnail[0], 'course-thumbnails');
+  const previewUpload = await this.s3Service.uploadFile(files.previewVideo[0], 'course-previews');
+
+  // Merge file URLs
+  const newCourseData = {
+    ...createCourseDto,
+    thumbnail: thumbnailUpload.url,
+    previewVideo: previewUpload.url,
+  };
+
+  // Save to MongoDB
+  return this.coursesService.create(newCourseData, req.user._id);
+}
 
   // Admin: Get instructor's courses
   @Get('my-courses')
@@ -86,9 +155,15 @@ export class SimplifiedCoursesController {
   // User: Get course content (only if enrolled)
   @Get(':id/content')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get course content with videos (enrolled users only)' })
+  @ApiOperation({
+    summary: 'Get course content with videos (enrolled users only)',
+  })
   async getCourseContent(@Param('id') id: string, @Request() req) {
-    return this.coursesService.getCourseWithVideos(id, req.user._id, req.user.role);
+    return this.coursesService.getCourseWithVideos(
+      id,
+      req.user._id,
+      req.user.role,
+    );
   }
 
   // User: Mark video as watched
@@ -100,7 +175,12 @@ export class SimplifiedCoursesController {
     @Param('videoIndex') videoIndex: number,
     @Request() req,
   ) {
-    return this.coursesService.markVideoAsWatched(id, +videoIndex, req.user._id, req.user.role);
+    return this.coursesService.markVideoAsWatched(
+      id,
+      +videoIndex,
+      req.user._id,
+      req.user.role,
+    );
   }
 
   // User/Admin: Get secure video stream URL
@@ -112,7 +192,12 @@ export class SimplifiedCoursesController {
     @Param('videoIndex') videoIndex: number,
     @Request() req,
   ) {
-    return this.coursesService.getSecureVideoUrl(id, +videoIndex, req.user._id, req.user.role);
+    return this.coursesService.getSecureVideoUrl(
+      id,
+      +videoIndex,
+      req.user._id,
+      req.user.role,
+    );
   }
 
   // Admin: Add video to course
@@ -136,7 +221,7 @@ export class SimplifiedCoursesController {
 
     // Upload video to S3
     const uploadResult = await this.s3Service.uploadFile(file, 'course-videos');
-    
+
     const newVideo = await this.coursesService.addVideo(
       id,
       addVideoDto,
@@ -163,7 +248,12 @@ export class SimplifiedCoursesController {
     if (req.user.role !== 'admin') {
       throw new BadRequestException('Only admins can remove videos');
     }
-    return this.coursesService.removeVideo(id, +videoIndex, req.user._id, req.user.role);
+    return this.coursesService.removeVideo(
+      id,
+      +videoIndex,
+      req.user._id,
+      req.user.role,
+    );
   }
 
   // Admin: Get single course
@@ -177,17 +267,44 @@ export class SimplifiedCoursesController {
   // Admin: Update course
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'thumbnail', maxCount: 1 },
+      { name: 'previewVideo', maxCount: 1 },
+    ]),
+  )
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Update course (Admin only)' })
   async update(
     @Param('id') id: string,
+    @UploadedFiles() files: { thumbnail?: Express.Multer.File[]; previewVideo?: Express.Multer.File[] },
     @Body() updateCourseDto: UpdateSimplifiedCourseDto,
     @Request() req,
   ) {
     if (req.user.role !== 'admin') {
       throw new BadRequestException('Only admins can update courses');
     }
-    return this.coursesService.update(id, updateCourseDto, req.user._id, req.user.role);
+
+    // Upload files if provided
+    if (files.thumbnail) {
+      const thumbnailUpload = await this.s3Service.uploadFile(files.thumbnail[0], 'course-thumbnails');
+      updateCourseDto.thumbnail = thumbnailUpload.url;
+    }
+
+    if (files.previewVideo) {
+      const previewUpload = await this.s3Service.uploadFile(files.previewVideo[0], 'course-previews');
+      updateCourseDto.previewVideo = previewUpload.url;
+    }
+
+    // Call the service to update the course
+    return this.coursesService.update(
+      id,
+      updateCourseDto,
+      req.user._id,
+      req.user.role,
+    );
   }
+
 
   // Admin: Delete course
   @Delete(':id')
@@ -199,5 +316,4 @@ export class SimplifiedCoursesController {
     }
     return this.coursesService.remove(id, req.user._id, req.user.role);
   }
-
 }
