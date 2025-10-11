@@ -154,8 +154,8 @@ export class S3Service {
   }
 
   async uploadLectureVideo(file: Express.Multer.File): Promise<UploadResult> {
-    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov', 'video/avi'];
-    const maxSizeBytes = 500 * 1024 * 1024; // 500MB limit
+    const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov', 'video/avi',"video/quicktime"];
+    const maxSizeBytes = 4096 * 1024 * 1024; // 500MB limit
     
     // Additional validation for video files
     if (file.size > maxSizeBytes) {
