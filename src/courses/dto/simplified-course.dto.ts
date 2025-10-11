@@ -1,4 +1,21 @@
-import { IsNotEmpty, IsString, IsNumber, IsOptional, Min, IsEnum, IsArray, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  IsEnum,
+  IsArray,
+  MaxLength,
+  Max,
+  ArrayNotEmpty,
+  IsPositive,
+  IsBoolean,
+  IsMimeType,
+  ValidateNested,
+  ValidateIf,
+  ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -83,6 +100,112 @@ export class AddVideoDto {
   @ApiProperty({ description: 'Auto detect duration from uploaded file', required: false, default: false })
   @IsOptional()
   autoDetectDuration?: boolean;
+}
+
+export class InitiateVideoUploadDto {
+  @ApiProperty({ description: 'Video title' })
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+
+  @ApiProperty({ description: 'Original file name with extension' })
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
+
+  @ApiProperty({ description: 'Total file size in bytes', maximum: 5368709120 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(5 * 1024 * 1024 * 1024)
+  fileSize: number;
+
+  @ApiProperty({ description: 'MIME type of the file' })
+  @IsString()
+  @IsNotEmpty()
+  mimeType: string;
+
+  @ApiProperty({ description: 'Size of each part in bytes', minimum: 5242880 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(5 * 1024 * 1024)
+  partSize: number;
+
+  @ApiProperty({ description: 'Total number of parts expected' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  totalParts: number;
+
+  @ApiProperty({ description: 'Should duration be auto detected from file metadata', required: false, default: true })
+  @IsOptional()
+  @IsBoolean()
+  autoDetectDuration?: boolean;
+
+  @ApiProperty({ description: 'Provided duration in seconds (if auto detect disabled)', required: false })
+  @ValidateIf((o) => !o.autoDetectDuration)
+  @Type(() => Number)
+  @IsNumber()
+  @IsPositive()
+  duration?: number;
+}
+
+export class PartNumberRequestDto {
+  @ApiProperty({ description: 'Part numbers that require presigned URLs', type: [Number] })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @Type(() => Number)
+  partNumbers: number[];
+}
+
+export class RecordUploadedPartDto {
+  @ApiProperty({ description: 'Uploaded part number (1-based index)' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  partNumber: number;
+
+  @ApiProperty({ description: 'ETag returned from S3 upload' })
+  @IsString()
+  @IsNotEmpty()
+  eTag: string;
+
+  @ApiProperty({ description: 'Size of the uploaded chunk in bytes', required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  partSize?: number;
+}
+
+class CompleteUploadPartDto {
+  @ApiProperty({ description: 'Uploaded part number' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  partNumber: number;
+
+  @ApiProperty({ description: 'ETag returned from S3 upload' })
+  @IsString()
+  @IsNotEmpty()
+  eTag: string;
+}
+
+export class CompleteVideoUploadDto {
+  @ApiProperty({ description: 'List of parts and their ETags', type: [CompleteUploadPartDto] })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => CompleteUploadPartDto)
+  parts: CompleteUploadPartDto[];
+
+  @ApiProperty({ description: 'Detected or provided duration in seconds', required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  duration?: number;
 }
 
 export class UpdateSimplifiedCourseDto {

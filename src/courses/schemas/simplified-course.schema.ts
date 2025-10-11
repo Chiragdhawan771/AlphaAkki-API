@@ -64,6 +64,8 @@ export class SimplifiedCourse {
     duration: number;
     order: number;
     uploadedAt: Date;
+    fileSize?: number;
+    checksum?: string;
   }[];
 }
 

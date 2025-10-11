@@ -1,6 +1,16 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,6 +18,22 @@ export interface UploadResult {
   key: string;
   url: string;
   bucket: string;
+}
+
+export interface InitiateMultipartUploadResult {
+  key: string;
+  uploadId: string;
+  bucket: string;
+}
+
+export interface MultipartUploadPartUrl {
+  partNumber: number;
+  url: string;
+}
+
+export interface CompleteMultipartUploadPart {
+  partNumber: number;
+  eTag: string;
 }
 
 @Injectable()
@@ -155,7 +181,7 @@ export class S3Service {
 
   async uploadLectureVideo(file: Express.Multer.File): Promise<UploadResult> {
     const allowedTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov', 'video/avi',"video/quicktime"];
-    const maxSizeBytes = 4096 * 1024 * 1024; // 500MB limit
+    const maxSizeBytes = 5 * 1024 * 1024 * 1024; // 5GB limit
     
     // Additional validation for video files
     if (file.size > maxSizeBytes) {
@@ -189,5 +215,106 @@ export class S3Service {
     }
     
     return this.uploadFile(file, 'lectures/audio', allowedTypes);
+  }
+
+  async initiateMultipartUpload(
+    fileName: string,
+    folder: string,
+    contentType: string,
+    metadata?: Record<string, string | undefined>,
+  ): Promise<InitiateMultipartUploadResult> {
+    const fileExtension = fileName.includes('.') ? fileName.split('.').pop() : undefined;
+    const uniqueName = fileExtension ? `${uuidv4()}.${fileExtension}` : uuidv4();
+    const key = `${folder.replace(/\/+$/g, '')}/${uniqueName}`;
+
+    const command = new CreateMultipartUploadCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      ContentType: contentType,
+      Metadata: metadata
+        ? Object.entries(metadata).reduce<Record<string, string>>((acc, [metaKey, value]) => {
+            if (typeof value === 'string') {
+              acc[metaKey] = value;
+            }
+            return acc;
+          }, {})
+        : undefined,
+    });
+
+    try {
+      const response = await this.s3Client.send(command);
+      if (!response.UploadId) {
+        throw new BadRequestException('Failed to initiate multipart upload. Missing upload ID');
+      }
+
+      return {
+        key,
+        uploadId: response.UploadId,
+        bucket: this.bucketName,
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to initiate multipart upload: ${error.message}`);
+    }
+  }
+
+  async getMultipartUploadPartUrl(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    expiresInSeconds = 900,
+  ): Promise<string> {
+    const command = new UploadPartCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      UploadId: uploadId,
+      PartNumber: partNumber,
+    });
+
+    try {
+      return await getSignedUrl(this.s3Client, command, { expiresIn: expiresInSeconds });
+    } catch (error) {
+      throw new BadRequestException(`Failed to generate presigned URL for part ${partNumber}: ${error.message}`);
+    }
+  }
+
+  async completeMultipartUpload(
+    key: string,
+    uploadId: string,
+    parts: CompleteMultipartUploadPart[],
+  ): Promise<void> {
+    const command = new CompleteMultipartUploadCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      UploadId: uploadId,
+      MultipartUpload: {
+        Parts: parts
+          .sort((a, b) => a.partNumber - b.partNumber)
+          .map((part) => ({ PartNumber: part.partNumber, ETag: part.eTag })),
+      },
+    });
+
+    try {
+      await this.s3Client.send(command);
+    } catch (error) {
+      throw new BadRequestException(`Failed to complete multipart upload: ${error.message}`);
+    }
+  }
+
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    const command = new AbortMultipartUploadCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      UploadId: uploadId,
+    });
+
+    try {
+      await this.s3Client.send(command);
+    } catch (error) {
+      throw new BadRequestException(`Failed to abort multipart upload: ${error.message}`);
+    }
+  }
+
+  getPublicUrl(key: string): string {
+    return `https://${this.bucketName}.s3.${this.configService.get('AWS_REGION')}.amazonaws.com/${key}`;
   }
 }

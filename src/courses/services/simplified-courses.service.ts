@@ -3,14 +3,31 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { SimplifiedCourse, SimplifiedCourseDocument } from '../schemas/simplified-course.schema';
 import { Enrollment, EnrollmentDocument, EnrollmentStatus } from '../schemas/enrollment.schema';
-import { CreateSimplifiedCourseDto, UpdateSimplifiedCourseDto, AddVideoDto, EnrollCourseDto } from '../dto/simplified-course.dto';
-import { S3Service } from '../../common/services/s3.service';
+import {
+  CreateSimplifiedCourseDto,
+  UpdateSimplifiedCourseDto,
+  AddVideoDto,
+  EnrollCourseDto,
+  InitiateVideoUploadDto,
+  PartNumberRequestDto,
+  RecordUploadedPartDto,
+  CompleteVideoUploadDto,
+} from '../dto/simplified-course.dto';
+import { S3Service, CompleteMultipartUploadPart } from '../../common/services/s3.service';
+import {
+  SimplifiedCourseVideoUploadSession,
+  SimplifiedCourseVideoUploadSessionDocument,
+  VideoUploadStatus,
+  UploadedPart,
+} from '../schemas/video-upload-session.schema';
 
 @Injectable()
 export class SimplifiedCoursesService {
   constructor(
     @InjectModel(SimplifiedCourse.name) private courseModel: Model<SimplifiedCourseDocument>,
     @InjectModel(Enrollment.name) private enrollmentModel: Model<EnrollmentDocument>,
+    @InjectModel(SimplifiedCourseVideoUploadSession.name)
+    private readonly uploadSessionModel: Model<SimplifiedCourseVideoUploadSessionDocument>,
     private readonly s3Service: S3Service,
   ) {}
 
@@ -86,48 +103,16 @@ export class SimplifiedCoursesService {
     return this.courseModel.findByIdAndDelete(id);
   }
 
-  // Admin: Add video to course
-  async addVideo(courseId: string, addVideoDto: AddVideoDto, videoUrl: string, videoKey: string, userId: string, userRole: string) {
-    const course = await this.courseModel.findById(courseId);
-    if (!course) {
-      throw new NotFoundException('Course not found');
-    }
-
-    if (userRole !== 'admin' && course.instructor.toString() !== userId) {
-      throw new ForbiddenException('You can only add videos to your own courses');
-    }
-
-    let resolvedDuration = typeof addVideoDto.duration === 'number' && !Number.isNaN(addVideoDto.duration)
-      ? Math.max(0, Math.round(addVideoDto.duration))
-      : 0;
-
-    if (resolvedDuration === 0 && videoKey) {
-      try {
-        const metadata = await this.s3Service.getObjectMetadata(videoKey);
-        if (metadata?.Metadata?.duration) {
-          const parsedDuration = Number(metadata.Metadata.duration);
-          if (!Number.isNaN(parsedDuration) && parsedDuration > 0) {
-            resolvedDuration = Math.round(parsedDuration);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to read video metadata for duration:', error);
-      }
-    }
-
-    const newVideo = {
-      title: addVideoDto.title,
-      videoUrl,
-      videoKey,
-      duration: resolvedDuration,
-      order: course.videos.length + 1,
-      uploadedAt: new Date()
-    };
-
-    course.videos.push(newVideo);
-    await course.save();
-
-    return newVideo;
+  // Legacy method placeholder (should not be used once multipart flow is live)
+  async addVideo(
+    _courseId: string,
+    _addVideoDto: AddVideoDto,
+    _videoUrl: string,
+    _videoKey: string,
+    _userId: string,
+    _userRole: string,
+  ) {
+    throw new BadRequestException('Direct video uploads are no longer supported. Use multipart upload flow.');
   }
 
   // Admin: Remove video from course
@@ -415,5 +400,310 @@ export class SimplifiedCoursesService {
         }
       };
     }
+  }
+
+  async initiateVideoUpload(
+    courseId: string,
+    userId: string,
+    userRole: string,
+    payload: InitiateVideoUploadDto,
+  ) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { mimetype } = payload as any;
+    const mimeType = payload.mimeType || mimetype;
+
+    const allowedMimeTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov', 'video/avi', 'video/quicktime'];
+    if (!allowedMimeTypes.includes(mimeType)) {
+      throw new BadRequestException('Unsupported video type');
+    }
+
+    const course = await this.courseModel.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    if (userRole !== 'admin' && course.instructor.toString() !== userId) {
+      throw new ForbiddenException('You can only upload videos for your own courses');
+    }
+
+    if (payload.fileSize > 5 * 1024 * 1024 * 1024) {
+      throw new BadRequestException('Maximum allowed file size is 5GB');
+    }
+
+    const existingActiveSession = await this.uploadSessionModel.findOne({
+      course: courseId,
+      instructor: userId,
+      status: { $in: [VideoUploadStatus.INITIATED, VideoUploadStatus.UPLOADING] },
+    });
+
+    if (existingActiveSession) {
+      throw new BadRequestException('An upload session is already in progress for this course');
+    }
+
+    const metadata: Record<string, string> = {
+      title: payload.title,
+      courseId,
+      instructorId: userId,
+      autoDetectDuration: payload.autoDetectDuration ? 'true' : 'false',
+    };
+
+    const { key, uploadId, bucket } = await this.s3Service.initiateMultipartUpload(
+      payload.fileName,
+      'lectures/videos',
+      mimeType,
+      metadata,
+    );
+
+    const session = await this.uploadSessionModel.create({
+      course: courseId,
+      instructor: userId,
+      initiatorRole: userRole,
+      title: payload.title,
+      fileName: payload.fileName,
+      fileSize: payload.fileSize,
+      mimeType,
+      uploadId,
+      s3Key: key,
+      partSize: payload.partSize,
+      totalParts: payload.totalParts,
+      status: VideoUploadStatus.INITIATED,
+      autoDetectDuration: payload.autoDetectDuration ?? true,
+      providedDuration: payload.autoDetectDuration ? null : payload.duration ?? null,
+      uploadedParts: [],
+    });
+
+    return {
+      sessionId: session._id,
+      uploadId,
+      key,
+      bucket,
+      partSize: session.partSize,
+      totalParts: session.totalParts,
+    };
+  }
+
+  async getPresignedPartUrls(
+    courseId: string,
+    sessionId: string,
+    userId: string,
+    userRole: string,
+    payload: PartNumberRequestDto,
+  ) {
+    const session = await this.assertUploadSessionOwnership(courseId, sessionId, userId, userRole);
+
+    if (session.status === VideoUploadStatus.COMPLETED) {
+      throw new BadRequestException('Upload session already completed');
+    }
+
+    const invalidPart = payload.partNumbers.find(
+      (partNumber) => partNumber < 1 || partNumber > session.totalParts,
+    );
+    if (invalidPart) {
+      throw new BadRequestException(`Invalid part number requested: ${invalidPart}`);
+    }
+
+    const urls = await Promise.all(
+      payload.partNumbers.map(async (partNumber) => ({
+        partNumber,
+        url: await this.s3Service.getMultipartUploadPartUrl(
+          session.s3Key,
+          session.uploadId,
+          partNumber,
+        ),
+      })),
+    );
+
+    if (session.status === VideoUploadStatus.INITIATED) {
+      session.status = VideoUploadStatus.UPLOADING;
+      await session.save();
+    }
+
+    return {
+      sessionId: session._id,
+      parts: urls,
+    };
+  }
+
+  async recordUploadedPart(
+    courseId: string,
+    sessionId: string,
+    userId: string,
+    userRole: string,
+    payload: RecordUploadedPartDto,
+  ) {
+    const session = await this.assertUploadSessionOwnership(courseId, sessionId, userId, userRole);
+
+    if (session.status === VideoUploadStatus.COMPLETED) {
+      throw new BadRequestException('Upload session already completed');
+    }
+
+    if (payload.partNumber < 1 || payload.partNumber > session.totalParts) {
+      throw new BadRequestException('Invalid part number');
+    }
+
+    if (session.status === VideoUploadStatus.INITIATED) {
+      session.status = VideoUploadStatus.UPLOADING;
+    }
+
+    const duplicatePart = session.uploadedParts.find((part) => part.partNumber === payload.partNumber);
+    if (duplicatePart) {
+      duplicatePart.eTag = payload.eTag;
+    } else {
+      session.uploadedParts.push({
+        partNumber: payload.partNumber,
+        eTag: payload.eTag,
+      });
+    }
+
+    await session.save();
+
+    return {
+      sessionId: session._id,
+      uploadedParts: session.uploadedParts,
+      remainingParts: session.totalParts - session.uploadedParts.length,
+    };
+  }
+
+  async completeVideoUpload(
+    courseId: string,
+    sessionId: string,
+    userId: string,
+    userRole: string,
+    payload: CompleteVideoUploadDto,
+  ) {
+    const session = await this.assertUploadSessionOwnership(courseId, sessionId, userId, userRole);
+
+    if (session.status === VideoUploadStatus.COMPLETED) {
+      return this.buildCompletedUploadResponse(session);
+    }
+
+    const partNumbersSet = new Set(payload.parts.map((part) => part.partNumber));
+    if (partNumbersSet.size !== payload.parts.length) {
+      throw new BadRequestException('Duplicate part numbers provided');
+    }
+
+    const parts: CompleteMultipartUploadPart[] = payload.parts
+      .slice()
+      .sort((a, b) => a.partNumber - b.partNumber)
+      .map((part, index) => ({
+        partNumber: part.partNumber,
+        eTag: part.eTag,
+      }));
+
+    if (session.totalParts !== parts.length) {
+      throw new BadRequestException('All parts must be uploaded before completion');
+    }
+
+    if (!parts.every((part, index) => part.partNumber === index + 1)) {
+      throw new BadRequestException('Parts must be sequential starting at 1');
+    }
+
+    await this.s3Service.completeMultipartUpload(session.s3Key, session.uploadId, parts);
+
+    const duration = this.resolveVideoDuration(session, payload.duration);
+
+    const course = await this.courseModel.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    if (userRole !== 'admin' && course.instructor.toString() !== userId) {
+      throw new ForbiddenException('You can only add videos to your own courses');
+    }
+
+    const video = {
+      title: session.title,
+      videoUrl: this.s3Service.getPublicUrl(session.s3Key),
+      videoKey: session.s3Key,
+      duration,
+      order: course.videos.length + 1,
+      uploadedAt: new Date(),
+      fileSize: session.fileSize,
+    };
+
+    course.videos.push(video);
+    await course.save();
+
+    session.status = VideoUploadStatus.COMPLETED;
+    session.completedAt = new Date();
+    session.resolvedDuration = duration;
+    await session.save();
+
+    return this.buildCompletedUploadResponse(session, video);
+  }
+
+  async abortVideoUpload(courseId: string, sessionId: string, userId: string, userRole: string) {
+    const session = await this.assertUploadSessionOwnership(courseId, sessionId, userId, userRole);
+
+    if (session.status === VideoUploadStatus.COMPLETED) {
+      throw new BadRequestException('Upload session already completed');
+    }
+
+    await this.s3Service.abortMultipartUpload(session.s3Key, session.uploadId);
+
+    session.status = VideoUploadStatus.ABORTED;
+    session.errorMessage = 'Upload aborted by user';
+    await session.save();
+
+    return {
+      sessionId: session._id,
+      status: session.status,
+    };
+  }
+
+  private async assertUploadSessionOwnership(
+    courseId: string,
+    sessionId: string,
+    userId: string,
+    userRole: string,
+  ): Promise<SimplifiedCourseVideoUploadSessionDocument> {
+    const session = await this.uploadSessionModel.findById(sessionId);
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+
+    if (session.course.toString() !== courseId) {
+      throw new BadRequestException('Upload session does not belong to this course');
+    }
+
+    if (session.instructor.toString() !== userId && userRole !== 'admin') {
+      throw new ForbiddenException('You do not have access to this upload session');
+    }
+
+    return session;
+  }
+
+  private resolveVideoDuration(
+    session: SimplifiedCourseVideoUploadSessionDocument,
+    providedDuration?: number,
+  ): number {
+    if (typeof providedDuration === 'number' && !Number.isNaN(providedDuration) && providedDuration > 0) {
+      return Math.round(providedDuration);
+    }
+
+    if (!session.autoDetectDuration && typeof session.providedDuration === 'number') {
+      return Math.round(session.providedDuration);
+    }
+
+    if (session.resolvedDuration && session.resolvedDuration > 0) {
+      return Math.round(session.resolvedDuration);
+    }
+
+    return 0;
+  }
+
+  private buildCompletedUploadResponse(
+    session: SimplifiedCourseVideoUploadSessionDocument,
+    video?: SimplifiedCourse['videos'][number],
+  ) {
+    return {
+      sessionId: session._id,
+      status: session.status,
+      video,
+      duration: video?.duration ?? session.resolvedDuration,
+      uploadedParts: session.uploadedParts,
+      completedAt: session.completedAt,
+    };
   }
 }

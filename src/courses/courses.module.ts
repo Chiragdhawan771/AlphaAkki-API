@@ -5,6 +5,10 @@ import { Lecture, LectureSchema } from './schemas/lecture.schema';
 import { Enrollment, EnrollmentSchema } from './schemas/enrollment.schema';
 import { Progress, ProgressSchema } from './schemas/progress.schema';
 import { SimplifiedCourse, SimplifiedCourseSchema } from './schemas/simplified-course.schema';
+import {
+  SimplifiedCourseVideoUploadSession,
+  SimplifiedCourseVideoUploadSessionSchema,
+} from './schemas/video-upload-session.schema';
 import { Review, ReviewSchema } from './schemas/review.schema';
 import { Payment, PaymentSchema } from './schemas/payment.schema';
 import { CoursesService } from './courses.service';
@@ -34,6 +38,10 @@ import { UsersModule } from '../users/users.module';
       { name: Enrollment.name, schema: EnrollmentSchema },
       { name: Progress.name, schema: ProgressSchema },
       { name: SimplifiedCourse.name, schema: SimplifiedCourseSchema },
+      {
+        name: SimplifiedCourseVideoUploadSession.name,
+        schema: SimplifiedCourseVideoUploadSessionSchema,
+      },
       { name: Review.name, schema: ReviewSchema },
       { name: Payment.name, schema: PaymentSchema },
     ]),

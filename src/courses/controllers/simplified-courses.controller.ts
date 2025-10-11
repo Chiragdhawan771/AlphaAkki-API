@@ -13,11 +13,18 @@ import {
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SimplifiedCoursesService } from '../services/simplified-courses.service';
-import { CreateSimplifiedCourseDto, UpdateSimplifiedCourseDto, AddVideoDto, EnrollCourseDto } from '../dto/simplified-course.dto';
+import {
+  CreateSimplifiedCourseDto,
+  UpdateSimplifiedCourseDto,
+  EnrollCourseDto,
+  InitiateVideoUploadDto,
+  PartNumberRequestDto,
+  RecordUploadedPartDto,
+  CompleteVideoUploadDto,
+} from '../dto/simplified-course.dto';
 import { S3Service } from '../../common/services/s3.service';
 
 @ApiTags('simplified-courses')
@@ -115,40 +122,83 @@ export class SimplifiedCoursesController {
     return this.coursesService.getSecureVideoUrl(id, +videoIndex, req.user._id, req.user.role);
   }
 
-  // Admin: Add video to course
-  @Post(':id/videos')
+  // Admin: Initiate multipart lecture upload
+  @Post(':id/videos/uploads/initiate')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('video'))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Add video to course (Admin only)' })
-  async addVideo(
+  @ApiOperation({ summary: 'Initiate multipart video upload (Admin only)' })
+  async initiateVideoUpload(
     @Param('id') id: string,
-    @Body() addVideoDto: AddVideoDto,
-    @UploadedFile() file: Express.Multer.File,
+    @Body() payload: InitiateVideoUploadDto,
     @Request() req,
   ) {
     if (req.user.role !== 'admin') {
-      throw new BadRequestException('Only admins can add videos');
-    }
-    if (!file) {
-      throw new BadRequestException('Video file is required');
+      throw new BadRequestException('Only admins can upload course videos');
     }
 
-    // Upload video to S3
-    const uploadResult = await this.s3Service.uploadFile(file, 'course-videos');
-    
-    const newVideo = await this.coursesService.addVideo(
-      id,
-      addVideoDto,
-      uploadResult.url,
-      uploadResult.key,
-      req.user._id,
-      req.user.role,
-    );
+    return this.coursesService.initiateVideoUpload(id, req.user._id, req.user.role, payload);
+  }
 
-    return {
-      video: newVideo,
-    };
+  @Post(':id/videos/uploads/:sessionId/parts/presign')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get presigned URLs for multipart upload parts (Admin only)' })
+  async getPresignedPartUrls(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @Body() payload: PartNumberRequestDto,
+    @Request() req,
+  ) {
+    if (req.user.role !== 'admin') {
+      throw new BadRequestException('Only admins can upload course videos');
+    }
+
+    return this.coursesService.getPresignedPartUrls(id, sessionId, req.user._id, req.user.role, payload);
+  }
+
+  @Post(':id/videos/uploads/:sessionId/parts')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Record uploaded part metadata (Admin only)' })
+  async recordUploadedPart(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @Body() payload: RecordUploadedPartDto,
+    @Request() req,
+  ) {
+    if (req.user.role !== 'admin') {
+      throw new BadRequestException('Only admins can upload course videos');
+    }
+
+    return this.coursesService.recordUploadedPart(id, sessionId, req.user._id, req.user.role, payload);
+  }
+
+  @Post(':id/videos/uploads/:sessionId/complete')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Complete multipart video upload (Admin only)' })
+  async completeVideoUpload(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @Body() payload: CompleteVideoUploadDto,
+    @Request() req,
+  ) {
+    if (req.user.role !== 'admin') {
+      throw new BadRequestException('Only admins can upload course videos');
+    }
+
+    return this.coursesService.completeVideoUpload(id, sessionId, req.user._id, req.user.role, payload);
+  }
+
+  @Delete(':id/videos/uploads/:sessionId')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Abort multipart video upload (Admin only)' })
+  async abortVideoUpload(
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @Request() req,
+  ) {
+    if (req.user.role !== 'admin') {
+      throw new BadRequestException('Only admins can upload course videos');
+    }
+
+    return this.coursesService.abortVideoUpload(id, sessionId, req.user._id, req.user.role);
   }
 
   // Admin: Remove video from course
